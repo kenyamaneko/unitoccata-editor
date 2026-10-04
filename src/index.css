@@ -1,0 +1,151 @@
+@import 'tailwindcss';
+
+/* ページの背景。ウィンドウが小さく、はみ出した部分が見えるときも、画面の暗い色と同じにする。 */
+html,
+body {
+  background-color: #020617;
+}
+
+@theme {
+  /* 補足、ラベル、ヘルプなど、本文より控えめな文字の色。暗い背景 (slate-800 から slate-950) に対して、コントラスト比 4.5 以上を保つ。 */
+  --color-muted: #cbd5e1;
+}
+
+/* プレビューで、ノーツが判定ラインで消えるときの演出。ノーツと同じ色の四角が、ごく短い時間で少し大きくなりながら消え、小さな粒が周りに散る。 */
+@keyframes preview-pop {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.35);
+  }
+}
+
+@keyframes preview-particle {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) translate(0, 0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) translate(var(--dx), var(--dy)) scale(0.2);
+  }
+}
+
+.preview-pop {
+  position: absolute;
+  border-radius: 4px;
+  animation-name: preview-pop;
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+}
+
+.preview-particle {
+  position: absolute;
+  border-radius: 9999px;
+  animation-name: preview-particle;
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+}
+
+/* タップとフリックが消えるときの、広がる輪と、大きく膨らむ四角。 */
+@keyframes preview-pop-big {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.7);
+  }
+}
+
+@keyframes preview-ring {
+  from {
+    opacity: 0.95;
+    transform: translate(-50%, -50%) scale(0.4);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.9);
+  }
+}
+
+.preview-pop-big {
+  animation-name: preview-pop-big;
+}
+
+.preview-ring {
+  position: absolute;
+  border-width: 3px;
+  border-style: solid;
+  border-radius: 9999px;
+  animation-name: preview-ring;
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preview-pop,
+  .preview-particle,
+  .preview-ring {
+    display: none;
+  }
+}
+
+/* プレビューで、ロングノーツが判定ラインに当たっている間の演出。ロングノーツの横位置で脈打つように光る円と、上へ飛ぶ火花。 */
+@keyframes preview-hold-pulse {
+  from {
+    opacity: 0.3;
+    transform: translate(-50%, -50%) scale(0.85);
+  }
+  to {
+    opacity: 0.6;
+    transform: translate(-50%, -50%) scale(1.15);
+  }
+}
+
+.preview-hold {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(4px);
+  clip-path: inset(0 -20px 50% -20px);
+  animation: preview-hold-pulse 260ms ease-in-out infinite alternate;
+}
+
+/* 細長い火花が、向きを変えて飛び出し、勢いよく進んで、短くなりながら、後半で透明になって消える。動きと透明度は、別のアニメーションで動かす。 */
+@keyframes preview-spark-move {
+  from {
+    transform: translate(-50%, -50%) rotate(var(--angle)) translateX(0) scaleX(1);
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(var(--angle)) translateX(var(--distance)) scaleX(0.3);
+  }
+}
+
+@keyframes preview-spark-fade {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.preview-spark {
+  position: absolute;
+  border-radius: 9999px;
+  animation-name: preview-spark-move, preview-spark-fade;
+  animation-timing-function: cubic-bezier(0.1, 0.8, 0.3, 1), linear;
+  animation-fill-mode: forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preview-hold,
+  .preview-spark {
+    display: none;
+  }
+}

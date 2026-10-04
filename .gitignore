@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.DS_Store
+*.tsbuildinfo
+.firebase/
+.claude/scheduled_tasks.lock
+.env.local
+.env.*.local
+*-debug.log
+test-results/
+coverage/
+__pycache__/
+.pytest_cache/
+.vitest/

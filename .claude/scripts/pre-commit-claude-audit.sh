@@ -1,0 +1,391 @@
+#!/usr/bin/env bash
+# git commit 直前に、意味解釈が要る unitoccata-editor ルール違反を別 Claude プロセスで検出する。
+#
+# 別 session の Claude を auditor として起動し、staged diff を rules に照らしてレビューさせる。
+# worker 自身の authorship bias を構造的に排除するため、必ず別 session で実行する。
+#
+# 各違反を 2 軸で分類し、principles「ルール違反への対応」に従って自律修正と user 委譲を仕分ける:
+#   - clarity    : 違反の明白度 (obvious = 解釈の余地なし / interpretive = 解釈次第)
+#   - fix_safety : 是正の安全性 (safe = 修正しても設計上の実害なし / harmful = 是正に実害ありうる)
+# 出力コントラクト:
+#   - obvious かつ safe の違反あり → permissionDecision=deny で worker に差し戻し自律修正させる
+#   - それ以外の違反のみ (interpretive / harmful を含む) → permissionDecision=ask で user に判断委譲
+#   - violations 0 件 → exit 0
+#   - 監査不能 (入力欠落 / auditor 起動失敗 / API エラー / 出力欠落 / 単一ファイル超過) → exit 2 で フェイルクローズ
+#   - staged diff が auditor の context に収まらない場合はファイル単位でチャンク分割し全グループを監査
+#
+# 呼び出し: .claude/settings.json の PreToolUse hook (Bash matcher) から stdin 経由で JSON を受け取る。
+
+set -uo pipefail
+
+# auditor の stderr を捕捉する一時ファイル (並行 commit のレース回避に mktemp を使う)。
+err_file=$(mktemp)
+trap 'rm -f "$err_file"' EXIT
+
+input=$(cat)
+if [ -z "$input" ]; then
+  printf '⚠️  pre-commit-claude-audit: 空入力で起動。監査不能のため fail-safe で commit ブロック。\n' >&2
+  exit 2
+fi
+cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""' 2>/dev/null)
+jq_rc=$?
+if [ "$jq_rc" -ne 0 ]; then
+  printf '⚠️  pre-commit-claude-audit: JSON parse 失敗 (jq exit %d)。監査不能のため fail-safe で commit ブロック。\n' "$jq_rc" >&2
+  exit 2
+fi
+
+# 文字列リテラル / HEREDOC 内の偶発マッチを避けるため実行可能部分のみ抽出 (machine-audit と同手法)
+exec_cmd=$(printf '%s' "$cmd" | sed -E '/<</q' | sed -E 's/"[^"]*"//g; s/'\''[^'\'']*'\''//g')
+
+if ! printf '%s' "$exec_cmd" | grep -qE '(^|[[:space:]&|;`(])git[[:space:]]+commit'; then
+  exit 0
+fi
+if printf '%s' "$exec_cmd" | grep -qE 'git[[:space:]]+commit[[:space:]]+(--help|-h)([[:space:]]|$)'; then
+  exit 0
+fi
+
+target_cwd=$(printf '%s' "$cmd" | grep -oE 'git[[:space:]]+-C[[:space:]]+"?[^"&|;[:space:]]+' | head -1 | sed -E 's|^git[[:space:]]+-C[[:space:]]+"?||')
+if [ -z "$target_cwd" ]; then
+  before_commit=$(printf '%s' "$cmd" | sed -E 's/git[[:space:]]+commit.*//')
+  target_cwd=$(printf '%s' "$before_commit" | grep -oE '(^|[&|;[:space:]])cd[[:space:]]+"?[^"&|;[:space:]]+' | tail -1 | sed -E 's|.*cd[[:space:]]+"?||')
+fi
+if [ -z "$target_cwd" ]; then
+  target_cwd=$(printf '%s' "$input" | jq -r '.cwd // ""' 2>/dev/null)
+fi
+if [ -z "$target_cwd" ]; then
+  target_cwd=$(pwd)
+fi
+if ! cd "$target_cwd" 2>/dev/null; then
+  exit 0
+fi
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+  exit 0
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
+
+# commit 先が unitoccata-editor 本体でなければ (別リポ / 無関係な worktree) unitoccata-editor ルールを当てないため監査しない。
+repo_top=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ "$(cd "$repo_top" 2>/dev/null && pwd -P)" != "$REPO_DIR" ]; then
+  exit 0
+fi
+
+# 依存の解決結果として自動生成され、人が書いた規約違反を含まない。1 ファイルで監査予算を超えて commit を止めるため、監査対象から外す。
+AUDIT_EXCLUDE_PATHSPECS=(':(exclude,glob)**/package-lock.json')
+
+staged_diff=$(git diff --cached -U10 --diff-filter=ACM -- . "${AUDIT_EXCLUDE_PATHSPECS[@]}" 2>/dev/null)
+if [ -z "$staged_diff" ]; then
+  exit 0
+fi
+
+# 共通ルール (keyandnotes-rules) の所在。unitoccata-editor と同階層に checkout されている前提。
+# auditor は共通ベース + unitoccata-editor overlay の実効ルール集を必要とするため、欠落時は フェイルクローズ する。
+COMMON_DIR="$(cd "${REPO_DIR}/../keyandnotes-rules" 2>/dev/null && pwd -P)"
+if [ -z "$COMMON_DIR" ] || [ ! -f "${COMMON_DIR}/rules/principles.md" ]; then
+  printf '⚠️  pre-commit-claude-audit: 共通ルール (../keyandnotes-rules/rules/principles.md) が見つかりません。実効ルール集を構成できず監査不能のため fail-safe で commit ブロック。\n' >&2
+  exit 2
+fi
+
+# CLAUDE.md が定める path→lang 対応と一致させるため、対象パスを判定する。
+staged_names=$(git diff --cached --name-only --diff-filter=ACM -- . "${AUDIT_EXCLUDE_PATHSPECS[@]}" 2>/dev/null)
+has_ts=false
+if printf '%s' "$staged_names" | grep -qE '\.(ts|tsx)$'; then
+  has_ts=true
+fi
+
+# 各行 = mode|base_rel|overlay_rel|condition。base だけ注入して overlay を落とす事故を防ぐため、
+# prompt 生成・存在検証・配線漏れ検査は全てこの表のみを参照する。
+#   mode: pair (base+overlay を対で注入、衝突時 overlay 優先) / base-only (overlay 無し)
+#   base_rel / overlay_rel: rules/ 配下の相対パス。無い側は "-"
+#   condition: always | ts (staged 言語で注入要否を切替。配線漏れ検査は condition に関わらず全行を見る)
+RULESET=(
+  "pair|principles.md|principles.md|always"
+  "base-only|testing.md|-|always"
+  "base-only|coding.md|-|always"
+  "base-only|documentation.md|-|always"
+  "base-only|cicd.md|-|always"
+  "base-only|lang/typescript.md|-|ts"
+)
+
+# 配線漏れ検査の除外リスト。監査に注入しない rules/ 配下の .md を相対パスで列挙する。
+# flow.md はブランチ運用とリリースの進め方を定めるもので、staged diff の内容から違反を判定できないため注入しない。
+RULESET_COVERAGE_EXEMPT=("flow.md")
+
+# この commit の staged 言語で当該ルールを注入すべきかを返す。
+should_apply_rule() {
+  case "$1" in
+    always) return 0 ;;
+    ts) [ "$has_ts" = true ] ;;
+    *)
+      printf '⚠️  pre-commit-claude-audit: RULESET に未知の condition=%s。監査不能のため fail-safe で commit ブロック。\n' "$1" >&2
+      exit 2
+      ;;
+  esac
+}
+
+# build_prompt はパイプのサブシェルで走り exit が親に伝播しないため、存在検証は必ず本文脈 (メインシェル) で行う。
+for rule in "${RULESET[@]}"; do
+  IFS='|' read -r r_mode r_base r_overlay r_cond <<<"$rule"
+  should_apply_rule "$r_cond" || continue
+  case "$r_mode" in
+    pair)
+      [ -f "${COMMON_DIR}/rules/${r_base}" ] || { printf '⚠️  pre-commit-claude-audit: 共通ルール rules/%s が見つからず実効ルール集を構成できません。監査不能のため fail-safe で commit ブロック。\n' "$r_base" >&2; exit 2; }
+      [ -f "${REPO_DIR}/rules/${r_overlay}" ] || { printf '⚠️  pre-commit-claude-audit: unitoccata-editor overlay rules/%s が見つからず実効ルール集を構成できません。監査不能のため fail-safe で commit ブロック。\n' "$r_overlay" >&2; exit 2; }
+      ;;
+    base-only)
+      [ -f "${COMMON_DIR}/rules/${r_base}" ] || { printf '⚠️  pre-commit-claude-audit: 共通ルール rules/%s が見つからず実効ルール集を構成できません。監査不能のため fail-safe で commit ブロック。\n' "$r_base" >&2; exit 2; }
+      ;;
+    *)
+      printf '⚠️  pre-commit-claude-audit: RULESET に未知の mode=%s。監査不能のため fail-safe で commit ブロック。\n' "$r_mode" >&2; exit 2 ;;
+  esac
+done
+
+# overlay を足しても RULESET に配線し忘れると監査から静かに漏れるため、配線漏れを検知して フェイルクローズ にする。
+covered_overlays=""
+for rule in "${RULESET[@]}"; do
+  IFS='|' read -r r_mode r_base r_overlay r_cond <<<"$rule"
+  [ "$r_overlay" != "-" ] && covered_overlays="${covered_overlays}"$'\n'"${r_overlay}"
+done
+while IFS= read -r overlay_file; do
+  [ -z "$overlay_file" ] && continue
+  rel="${overlay_file#"${REPO_DIR}/rules/"}"
+  exempt=false
+  if [ "${#RULESET_COVERAGE_EXEMPT[@]}" -gt 0 ]; then
+    for ex in "${RULESET_COVERAGE_EXEMPT[@]}"; do
+      [ "$ex" = "$rel" ] && { exempt=true; break; }
+    done
+  fi
+  [ "$exempt" = true ] && continue
+  if ! printf '%s\n' "$covered_overlays" | grep -qxF "$rel"; then
+    printf '⚠️  pre-commit-claude-audit: overlay rules/%s が RULESET に配線されておらず監査に注入されません。RULESET に行を追加 (またはルールでなければ RULESET_COVERAGE_EXEMPT に追加) してから commit してください。監査漏れ防止のため fail-safe で commit ブロック。\n' "$rel" >&2
+    exit 2
+  fi
+done < <(find "${REPO_DIR}/rules" -type f -name '*.md' 2>/dev/null)
+
+# 手書きの参照一覧は principles.md の更新に追従せず漏れうるため、@import 先を動的に導出し RULESET の base 列と突き合わせる。
+AUDIT_COMMON_LIB="${COMMON_DIR}/scripts/claude-audit-common.sh"
+if [ ! -f "$AUDIT_COMMON_LIB" ]; then
+  printf '⚠️  pre-commit-claude-audit: 共有ロジック (%s) が見つかりません。監査不能のため fail-safe で commit ブロック。\n' "$AUDIT_COMMON_LIB" >&2
+  exit 2
+fi
+# shellcheck source=/dev/null
+source "$AUDIT_COMMON_LIB"
+
+covered_bases=""
+for rule in "${RULESET[@]}"; do
+  IFS='|' read -r r_mode r_base r_overlay r_cond <<<"$rule"
+  covered_bases="${covered_bases}"$'\n'"${r_base}"
+done
+while IFS= read -r base_ref; do
+  [ -z "$base_ref" ] && continue
+  if ! printf '%s\n' "$covered_bases" | grep -qxF "$base_ref"; then
+    printf '⚠️  pre-commit-claude-audit: principles.md が参照する共通ルール %s が RULESET に配線されておらず監査に注入されません。RULESET に行を追加してから commit してください。監査漏れ防止のため fail-safe で commit ブロック。\n' "$base_ref" >&2
+    exit 2
+  fi
+done <<< "$(kn_discover_base_refs "${COMMON_DIR}/rules/principles.md")"
+
+# auditor prompt を組み立てる。ルール群を毎回 inline 注入し auditor に fresh Read を強制する。
+build_prompt() {
+  cat <<'HEADER'
+あなたは unitoccata-editor リポジトリの SOFT (意味解釈型) ルール auditor です。
+別の Claude が書いた staged diff を、以下のルール集に照らしてレビューしてください。
+
+レビュー方針:
+- 明確なルール違反のみ列挙する。主観的な改善提案・スタイル好みは含めない
+- 各違反は file / line / rule / evidence / why / clarity / fix_safety を埋める。line は違反箇所の行番号 (diff の追加行) を必ず入れる
+- 違反 0 件なら "violations": [] を返す
+
+各違反を 2 軸で分類してください (hook が「worker が自律修正してよいか」を判定するのに使う):
+- clarity (明白度):
+  - "obvious"      = ルール文面に照らして違反が明白で、解釈の余地がない
+  - "interpretive" = ルールの解釈次第で違反とみなされ、判断が分かれうる
+- fix_safety (是正の安全性):
+  - "safe"    = 違反を修正しても設計上の実害がない (例: docstring 追加, What コメント削除)
+  - "harmful" = 是正することで設計上の実害が生じうる (例: 公開 API のリネーム, 責務分割による境界変更)
+- diff だけでは確信が持てないときは "interpretive" / "harmful" (= 安全側) に倒す。自律修正は明白かつ安全な違反に限定するため
+
+# 適用ルール
+
+共通ルール (keyandnotes-rules) をベースとし、unitoccata-editor の rules/ にある overlay が衝突時に優先する。
+HEADER
+
+  # 実効ルールを RULESET から注入する。存在検証・配線漏れ検査は本関数の呼び出し前にメインシェルで済ませてある。
+  for rule in "${RULESET[@]}"; do
+    IFS='|' read -r r_mode r_base r_overlay r_cond <<<"$rule"
+    should_apply_rule "$r_cond" || continue
+    case "$r_mode" in
+      pair)
+        printf '\n\n## %s (共通: keyandnotes-rules)\n' "$r_base"
+        cat "${COMMON_DIR}/rules/${r_base}"
+        printf '\n\n## %s (unitoccata-editor 固有。共通と衝突する場合はこちらが優先)\n' "$r_overlay"
+        cat "${REPO_DIR}/rules/${r_overlay}"
+        ;;
+      base-only)
+        printf '\n\n## %s (共通: keyandnotes-rules)\n' "$r_base"
+        cat "${COMMON_DIR}/rules/${r_base}"
+        ;;
+    esac
+  done
+
+  printf '\n\n# 対象 staged diff\n\n```diff\n%s\n```\n\n# 出力\n指定スキーマの JSON のみを返してください。\n' "$1"
+}
+
+schema='{
+  "type": "object",
+  "required": ["violations"],
+  "additionalProperties": false,
+  "properties": {
+    "violations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "line", "rule", "evidence", "why", "clarity", "fix_safety"],
+        "additionalProperties": false,
+        "properties": {
+          "file": {"type": "string"},
+          "line": {"type": "integer"},
+          "rule": {"type": "string"},
+          "evidence": {"type": "string"},
+          "why": {"type": "string"},
+          "clarity": {"type": "string", "enum": ["obvious", "interpretive"]},
+          "fix_safety": {"type": "string", "enum": ["safe", "harmful"]}
+        }
+      }
+    }
+  }
+}'
+
+# auditor の context window に収めるためのプロンプト上限 (bytes)。headless claude の基盤プロンプト分を
+# 差し引いた安全側の値。chunk 粒度のみ制御し監査の実行有無には影響しないため、環境変数で上書き可能。
+MAX_PROMPT_BYTES="${UNITOCCATA_EDITOR_AUDIT_MAX_PROMPT_BYTES:-350000}"
+
+# diff に割ける最小予算。これを下回るとチャンク分割しても監査が成立しないため フェイルクローズ する。
+MIN_DIFF_BUDGET_BYTES=20000
+
+AUDITOR_MODEL="claude-sonnet-5"
+
+all_violations='[]'
+
+# 1 グループ分の diff を auditor にかけ、違反を all_violations に集約する。
+# auditor が起動失敗 / API エラー / 出力欠落いずれかなら 監査不能とみなし exit 2 で フェイルクローズ。
+audit_diff() {
+  local diff_text="$1"
+  [ -z "$diff_text" ] && return 0
+
+  local out exit_code is_error err_msg vtype group_viol
+  out=$(build_prompt "$diff_text" | claude -p \
+    --model "$AUDITOR_MODEL" \
+    --tools "" \
+    --output-format json \
+    --json-schema "$schema" \
+    --no-session-persistence 2>"$err_file")
+  exit_code=$?
+
+  if [ "$exit_code" -ne 0 ]; then
+    printf '⚠️  pre-commit-claude-audit: Claude auditor 起動に失敗 (exit %d)。監査不能のため fail-safe で commit ブロック。\n%s\n' \
+      "$exit_code" "$(head -20 "$err_file" 2>/dev/null)" >&2
+    exit 2
+  fi
+
+  is_error=$(printf '%s' "$out" | jq -r '.is_error // false')
+  if [ "$is_error" = "true" ]; then
+    err_msg=$(printf '%s' "$out" | jq -r '.result // ""')
+    printf '⚠️  pre-commit-claude-audit: Claude auditor が API エラー。監査不能のため fail-safe で commit ブロック。\n%s\n' "$err_msg" >&2
+    exit 2
+  fi
+
+  # structured_output.violations が配列でなければ (欠落・型不正) 監査不能とみなす。
+  # jq の null indexing は length 0 を返すため、必ず type を見て判定する。
+  vtype=$(printf '%s' "$out" | jq -r '.structured_output.violations | type' 2>/dev/null)
+  if [ "$vtype" != "array" ]; then
+    printf '⚠️  pre-commit-claude-audit: auditor 出力の structured_output.violations が配列でない (type=%s)。監査不能のため fail-safe で commit ブロック。\nresult preview:\n%s\n' \
+      "$vtype" "$(printf '%s' "$out" | jq -r '.result // ""' | head -c 500)" >&2
+    exit 2
+  fi
+
+  group_viol=$(printf '%s' "$out" | jq -c '.structured_output.violations')
+  all_violations=$(jq -cn --argjson a "$all_violations" --argjson b "$group_viol" '$a + $b')
+}
+
+rules_bytes=$(build_prompt "" | wc -c | tr -d ' ')
+diff_budget=$(( MAX_PROMPT_BYTES - rules_bytes ))
+if [ "$diff_budget" -lt "$MIN_DIFF_BUDGET_BYTES" ]; then
+  printf '⚠️  pre-commit-claude-audit: ルール群が大きく diff 予算を確保できない (rules=%d bytes, max=%d)。監査不能のため fail-safe で commit ブロック。\n' \
+    "$rules_bytes" "$MAX_PROMPT_BYTES" >&2
+  exit 2
+fi
+
+staged_bytes=$(printf '%s' "$staged_diff" | wc -c | tr -d ' ')
+
+if [ "$staged_bytes" -le "$diff_budget" ]; then
+  audit_diff "$staged_diff"
+else
+  staged_files=()
+  while IFS= read -r f; do
+    [ -n "$f" ] && staged_files+=("$f")
+  done < <(git diff --cached --name-only --diff-filter=ACM -- . "${AUDIT_EXCLUDE_PATHSPECS[@]}" 2>/dev/null)
+
+  group_files=()
+  group_bytes=0
+
+  # 現在のグループに溜めた staged ファイルの diff をまとめて監査し、グループをリセットする。
+  flush_group() {
+    [ "${#group_files[@]}" -eq 0 ] && return 0
+    local gdiff
+    gdiff=$(git diff --cached -U10 --diff-filter=ACM -- "${group_files[@]}" 2>/dev/null)
+    audit_diff "$gdiff"
+    group_files=()
+    group_bytes=0
+  }
+
+  if [ "${#staged_files[@]}" -gt 0 ]; then
+    for f in "${staged_files[@]}"; do
+      fbytes=$(git diff --cached -U10 --diff-filter=ACM -- "$f" 2>/dev/null | wc -c | tr -d ' ')
+      if [ "$fbytes" -gt "$diff_budget" ]; then
+        printf '⚠️  pre-commit-claude-audit: 単一ファイルの diff が監査予算を超過 (%s: %d bytes > %d)。分割できず監査不能のため fail-safe で commit ブロック。当該ファイルの変更を分けてコミットしてください。\n' \
+          "$f" "$fbytes" "$diff_budget" >&2
+        exit 2
+      fi
+      if [ $(( group_bytes + fbytes )) -gt "$diff_budget" ] && [ "${#group_files[@]}" -gt 0 ]; then
+        flush_group
+      fi
+      group_files+=("$f")
+      group_bytes=$(( group_bytes + fbytes ))
+    done
+    flush_group
+  fi
+fi
+
+violations_count=$(printf '%s' "$all_violations" | jq 'length')
+if [ "$violations_count" -eq 0 ]; then
+  exit 0
+fi
+
+autofix=$(printf '%s' "$all_violations" | jq -c '[.[] | select(.clarity == "obvious" and .fix_safety == "safe")]')
+escalate=$(printf '%s' "$all_violations" | jq -c '[.[] | select(.clarity != "obvious" or .fix_safety != "safe")]')
+autofix_count=$(printf '%s' "$autofix" | jq 'length')
+escalate_count=$(printf '%s' "$escalate" | jq 'length')
+
+# 混在時は明白な違反を先に deny で解消させ、解釈次第 / 是正に実害ありうる違反は再 commit 時に
+# 別途 ask に載せる (auditor は 1 diff を一括判定するため、両者を同一 commit で同時には出せない)。
+if [ "$autofix_count" -gt 0 ]; then
+  reason=$(
+    printf '明白かつ修正に実害のないルール違反 %d 件を検出。principles「ルール違反への対応」に従い、自律修正してから再 commit してください:\n\n' "$autofix_count"
+    printf '%s' "$autofix" | jq -r '.[] | "- \(.file):\(.line)\n    rule: \(.rule)\n    evidence: \(.evidence)\n    why: \(.why)"'
+    if [ "$escalate_count" -gt 0 ]; then
+      printf '\n\n(解釈次第 / 是正に実害ありうる違反 %d 件は、上記修正後の再 commit で別途確認します。今は触れないでください。)' "$escalate_count"
+    fi
+    printf '\n\n検出が false positive だと判断する場合のみ、その理由を添えて user に確認してください。'
+  )
+  jq -nc --arg r "$reason" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $r}}'
+  exit 0
+fi
+
+reason=$(
+  printf 'Claude auditor が判断を要するルール違反 %d 件を検出。明白でない、または是正に設計上の実害がありうるため、修正可否を判断してください:\n\n' "$escalate_count"
+  printf '%s' "$escalate" | jq -r '.[] | "- \(.file):\(.line)  [明白度: \(if .clarity == "obvious" then "明白" else "解釈次第" end) / 是正の安全性: \(if .fix_safety == "safe" then "実害なし" else "実害ありうる" end)]\n    rule: \(.rule)\n    evidence: \(.evidence)\n    why: \(.why)"'
+  printf '\n\n修正するなら拒否、意図的に commit するなら許可してください。'
+)
+jq -nc --arg r "$reason" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "ask", permissionDecisionReason: $r}}'
+exit 0

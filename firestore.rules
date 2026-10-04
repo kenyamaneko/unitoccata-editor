@@ -1,0 +1,44 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function isValidName(value) {
+      return value is string && value.size() >= 1 && value.size() <= 100;
+    }
+
+    function isValidProject(data) {
+      return data.keys().hasOnly(['title', 'audioFileName', 'offsetMs', 'barCount', 'tempo', 'meter', 'updatedAt'])
+        && data.keys().hasAll(['title', 'audioFileName', 'offsetMs', 'barCount', 'tempo', 'meter', 'updatedAt'])
+        && isValidName(data.title)
+        && (data.audioFileName == null || data.audioFileName is string)
+        && data.offsetMs is number
+        && data.barCount is int && data.barCount >= 1 && data.barCount <= 1000
+        && data.tempo is list && data.tempo.size() >= 1 && data.tempo.size() <= 1000
+        && data.meter is list && data.meter.size() >= 1 && data.meter.size() <= 1000
+        && data.updatedAt is number;
+    }
+
+    function isValidChart(data) {
+      return data.keys().hasOnly(['name', 'laneCount', 'notes', 'updatedAt'])
+        && data.keys().hasAll(['name', 'laneCount', 'notes', 'updatedAt'])
+        && isValidName(data.name)
+        && data.laneCount is int && data.laneCount >= 1 && data.laneCount <= 16
+        && data.notes is list && data.notes.size() <= 3000
+        && data.updatedAt is number;
+    }
+
+    match /users/{uid}/projects/{projectId} {
+      allow read, delete: if isOwner(uid);
+      allow create, update: if isOwner(uid) && isValidProject(request.resource.data);
+
+      match /charts/{chartId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid) && isValidChart(request.resource.data);
+      }
+    }
+  }
+}
