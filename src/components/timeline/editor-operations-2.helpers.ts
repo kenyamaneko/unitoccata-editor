@@ -97,8 +97,42 @@ export async function pasteAt(app: AppDriver, key: 'Ctrl+V' | 'Cmd+V', tick: num
 }
 
 export async function pasteWithButtonAt(app: AppDriver, tick: number, lane: number): Promise<void> {
-  await app.timeline.hover(at(tick, lane))
   await app.click(app.button('貼り付け'))
+  await app.timeline.click(at(tick, lane))
+}
+
+export async function startWithBothTapsCopied(): Promise<AppDriver> {
+  const app = await startWithTwoTaps()
+  await selectBothTaps(app)
+  await app.click(app.button('コピー'))
+  return app
+}
+
+export async function choosePastePosition(app: AppDriver): Promise<void> {
+  await app.click(app.button('貼り付け'))
+  expect(app.button('貼り付け'), '「貼り付け」ボタンが押された状態になっていません').toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+}
+
+export async function startWithTapsAt480Lane3AndAt720Lane1(): Promise<AppDriver> {
+  const app = await startApp()
+  await loadChartAndReleaseFocus(app, [
+    { type: 'tap', tick: 480, lane: 3 },
+    { type: 'tap', tick: 720, lane: 1 },
+  ])
+  return app
+}
+
+export async function startWithTapsAt480Lane1AndLane3AndAt720Lane0(): Promise<AppDriver> {
+  const app = await startApp()
+  await loadChartAndReleaseFocus(app, [
+    { type: 'tap', tick: 480, lane: 1 },
+    { type: 'tap', tick: 480, lane: 3 },
+    { type: 'tap', tick: 720, lane: 0 },
+  ])
+  return app
 }
 
 export async function startWithTwoPlacedTaps(): Promise<AppDriver> {

@@ -19,6 +19,10 @@ import { createAudioBytes, createAudioFile } from '../../test/fakeAudio.ts'
 
 const SONG = 'テスト曲'
 const CHART = '譜面1'
+const TWO_TAP_NOTES = [
+  { type: 'tap', tick: 480, lane: 2 },
+  { type: 'tap', tick: 960, lane: 1 },
+] as const
 const NAME_GUIDANCE = '。「プロジェクト情報」と「譜面設定」で入力してください'
 const LOGOUT_NETWORK_FAILURE =
   'ログアウトできませんでした: 通信に失敗しました。ネットワークの接続を確認して、もう一度お試しください'
@@ -128,25 +132,6 @@ describe('[クラウドに保存] 「クラウドに保存」ダイアログの�
           expect(app.button('保存する')).toBeEnabled()
         },
       )
-    })
-
-    describe('異常系', () => {
-      it.each([
-        { condition: '曲名が空のとき', songName: '', chartName: CHART },
-        { condition: '曲名が「a」の 101 文字のとき', songName: 'a'.repeat(101), chartName: CHART },
-        { condition: '譜面名が空のとき', songName: SONG, chartName: '' },
-        { condition: '譜面名が「a」の 101 文字のとき', songName: SONG, chartName: 'a'.repeat(101) },
-      ])(
-        '$condition、「クラウドに保存」を押すと、ダイアログの「保存する」は押せない状態になる',
-        async ({ songName, chartName }) => {
-          const app = await startSignedIn()
-          await enterNames(app, songName, chartName)
-
-          await openSaveDialog(app)
-
-          expect(app.button('保存する')).toBeDisabled()
-        },
-      )
 
       it.each([
         { condition: '曲名が空のとき', songName: '', chartName: CHART, message: '曲名を入力してください' },
@@ -175,6 +160,23 @@ describe('[クラウドに保存] 「クラウドに保存」ダイアログの�
           await openSaveDialog(app)
 
           expect(within(saveDialog()).getByText(new RegExp(`^${subject}.+${NAME_GUIDANCE}$`))).toBeInTheDocument()
+        },
+      )
+
+      it.each([
+        { condition: '曲名が空のとき', songName: '', chartName: CHART },
+        { condition: '曲名が「a」の 101 文字のとき', songName: 'a'.repeat(101), chartName: CHART },
+        { condition: '譜面名が空のとき', songName: SONG, chartName: '' },
+        { condition: '譜面名が「a」の 101 文字のとき', songName: SONG, chartName: 'a'.repeat(101) },
+      ])(
+        '$condition、「クラウドに保存」を押すと、ダイアログの「保存する」は押せない状態になる',
+        async ({ songName, chartName }) => {
+          const app = await startSignedIn()
+          await enterNames(app, songName, chartName)
+
+          await openSaveDialog(app)
+
+          expect(app.button('保存する')).toBeDisabled()
         },
       )
 
@@ -226,6 +228,45 @@ describe('[クラウドに保存] 保存の途中', () => {
         await app.settle()
 
         expect(within(saveDialog()).getByText(savedMessage(SONG, CHART))).toBeInTheDocument()
+      })
+    })
+  })
+})
+
+describe('[クラウドに保存] 「保存する」の連続押下', () => {
+  describe('タップノーツ 2 個を置いた譜面を、曲名「テスト曲」・譜面名「譜面1」で保存するとき、「保存する」を続けて 2 回押すと', () => {
+    describe('正常系', () => {
+      it('クラウドに保存されるプロジェクトは「テスト曲」の 1 件だけになる', async () => {
+        const app = await startSignedIn()
+        await app.loadChart(TWO_TAP_NOTES)
+        await openSaveDialogWithNames(app, SONG, CHART)
+
+        await pressSave(app)
+        await pressSave(app)
+
+        expect(await app.cloud.listProjects()).toEqual([SONG])
+      })
+
+      it('クラウドの曲「テスト曲」に保存される譜面は「譜面1」の 1 件だけになる', async () => {
+        const app = await startSignedIn()
+        await app.loadChart(TWO_TAP_NOTES)
+        await openSaveDialogWithNames(app, SONG, CHART)
+
+        await pressSave(app)
+        await pressSave(app)
+
+        expect(await app.cloud.listCharts(SONG)).toEqual([CHART])
+      })
+
+      it('クラウドに保存された譜面「譜面1」のノーツは 2 個になる', async () => {
+        const app = await startSignedIn()
+        await app.loadChart(TWO_TAP_NOTES)
+        await openSaveDialogWithNames(app, SONG, CHART)
+
+        await pressSave(app)
+        await pressSave(app)
+
+        expect((await app.cloud.readChart(SONG, CHART))?.notes).toHaveLength(2)
       })
     })
   })
@@ -429,9 +470,9 @@ describe('[クラウドに保存] プロジェクトと譜面の保存の失敗'
   })
 })
 
-describe('[クラウドに保存] 古い音源の削除の失敗', () => {
+describe('[クラウドに保存] 古い音源の確認・削除の失敗', () => {
   describe('クラウドに音源 song.mp3 が保存済みで、音源 song.ogg を読み込み、曲名と譜面名はクラウドから開いた値のとき', () => {
-    describe('異常系', () => {
+    describe('正常系', () => {
       it(`クラウドの音源の一覧の読み取りが許可されていないとき、「保存する」を押すと、ダイアログに「${AUDIO_LIST_FAILED}」と表示される`, async () => {
         const app = await startWithAudioSavedOverOldAudio()
         app.cloudFaults.denyOperation('storage-list')

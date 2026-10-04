@@ -55,7 +55,13 @@ export function EditingControls() {
         <CopyIcon />
         コピー
       </Button>
-      <Button onClick={() => store.paste()} disabled={store.clipboard.notes.length === 0} title="Ctrl+V">
+      <Button
+        tone={store.isPasteTargeting ? 'active' : 'neutral'}
+        aria-pressed={store.isPasteTargeting}
+        onClick={() => store.togglePasteTargeting()}
+        disabled={store.clipboard.notes.length === 0}
+        title="Ctrl+V"
+      >
         <PasteIcon />
         貼り付け
       </Button>

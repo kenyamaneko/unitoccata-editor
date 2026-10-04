@@ -38,7 +38,15 @@ import {
   type ProjectInfoEditResult,
   locateBeatPosition,
 } from '../domain/projectInfo.ts'
-import type { Chart, ChartPoint, FlickDirection, PointRef, ProjectInfo } from '../domain/types.ts'
+import type {
+  Chart,
+  ChartPoint,
+  FlickDirection,
+  PointRef,
+  ProjectInfo,
+  SignatureChange,
+  TempoChange,
+} from '../domain/types.ts'
 import {
   DEFAULT_PIXELS_PER_TICK,
   MAX_PIXELS_PER_TICK,
@@ -142,6 +150,8 @@ export interface EditorState {
   readonly metronomeEnabled: boolean
   readonly hoverPoint: PointRef | null
   readonly cursorPoint: ChartPoint | null
+  /** 「貼り付け」ボタンを押して、貼り付ける位置の選択を待っているか。 */
+  readonly isPasteTargeting: boolean
   readonly audio: LoadedAudio | null
   readonly isLoadingAudio: boolean
   readonly isDialogOpen: boolean
@@ -181,6 +191,12 @@ export interface EditorActions {
   copySelection(): void
   cutSelection(): void
   paste(): void
+  /** 貼り付ける位置の選択を始める。選択の最中に呼ぶと、貼り付けずに選択を終える。コピーしたノーツがないときは、通知を出して始めない。 */
+  togglePasteTargeting(): void
+  /** 貼り付ける位置の選択を、貼り付けずに終える。 */
+  cancelPasteTargeting(): void
+  /** 指定の位置を原点にコピーしたノーツを貼り付けて、位置の選択を終える。貼り付けられなかったときは、通知を出して、位置の選択を続ける。 */
+  pasteAt(point: ChartPoint): void
   undo(): void
   redo(): void
   setGridDivision(division: GridDivision): void
@@ -207,9 +223,16 @@ export interface EditorActions {
   setDialogOpen(isOpen: boolean): void
   loadChart(chart: Chart, laneCount: number, projectInfo: ProjectInfo): void
   openCloudChart(opened: OpenedCloudChart): void
-  applyMidiImport(chart: Chart, projectInfo: ProjectInfo | null): void
+  /** MIDI から取り込んだ譜面を反映する。imported のテンポ・拍子は、取り込む場合だけ値を渡し (null なら、いまの値のまま)、オフセットは変えない。 */
+  applyMidiImport(chart: Chart, imported: MidiImportedProjectInfo): void
   showNotice(message: string): void
   dismissNotice(): void
+}
+
+/** MIDI から取り込むプロジェクト情報。取り込まないものは null。 */
+export interface MidiImportedProjectInfo {
+  readonly tempo: readonly TempoChange[] | null
+  readonly meter: readonly SignatureChange[] | null
 }
 
 function createNotice(message: string): Notice {
@@ -265,6 +288,17 @@ export const useEditorStore = create<EditorState & EditorActions>()((set, get) =
     set({ notice: createNotice(PROJECT_INFO_FAILURE_MESSAGES[result.reason]) })
   }
 
+  /** 指定の位置を原点に、コピーしたノーツを貼り付ける。貼り付けられなかったときは、通知を出して false を返す。 */
+  const pasteAtPoint = (origin: ChartPoint): boolean => {
+    const { chart, clipboard, laneCount } = get()
+    const before = new Set(chart.notes.map((note) => note.id))
+    const result = pasteClipboard(chart, clipboard, origin, createNoteId, laneCount)
+    applyEdit(result, (next) => ({
+      selectedNoteIds: next.notes.filter((note) => !before.has(note.id)).map((note) => note.id),
+    }))
+    return result.ok
+  }
+
   /** 読み込む譜面とプロジェクト情報が、いまの小節数に収まらないとき、収まるように小節数を広げる状態の更新を返す。 */
   const expandBarCountFor = (projectInfo: ProjectInfo, chart: Chart): Partial<EditorState> => {
     const current = get().barCount
@@ -293,6 +327,7 @@ export const useEditorStore = create<EditorState & EditorActions>()((set, get) =
     metronomeEnabled: false,
     hoverPoint: null,
     cursorPoint: null,
+    isPasteTargeting: false,
     audio: null,
     isLoadingAudio: false,
     isDialogOpen: false,
@@ -405,7 +440,7 @@ export const useEditorStore = create<EditorState & EditorActions>()((set, get) =
       applyEdit(deleteNotes(chart, selectedNoteIds, laneCount), () => ({ selectedNoteIds: [] }))
     },
     paste() {
-      const { chart, clipboard, cursorPoint, laneCount } = get()
+      const { clipboard, cursorPoint } = get()
       if (clipboard.notes.length === 0) {
         set({ notice: createNotice(NO_COPIED_NOTES_MESSAGE) })
         return
@@ -414,10 +449,27 @@ export const useEditorStore = create<EditorState & EditorActions>()((set, get) =
         set({ notice: createNotice(NO_PASTE_POSITION_MESSAGE) })
         return
       }
-      const before = new Set(chart.notes.map((note) => note.id))
-      applyEdit(pasteClipboard(chart, clipboard, cursorPoint, createNoteId, laneCount), (next) => ({
-        selectedNoteIds: next.notes.filter((note) => !before.has(note.id)).map((note) => note.id),
-      }))
+      pasteAtPoint(cursorPoint)
+    },
+    togglePasteTargeting() {
+      const { clipboard, isPasteTargeting } = get()
+      if (isPasteTargeting) {
+        set({ isPasteTargeting: false })
+        return
+      }
+      if (clipboard.notes.length === 0) {
+        set({ notice: createNotice(NO_COPIED_NOTES_MESSAGE) })
+        return
+      }
+      set({ isPasteTargeting: true })
+    },
+    cancelPasteTargeting() {
+      set({ isPasteTargeting: false })
+    },
+    pasteAt(point) {
+      if (pasteAtPoint(point)) {
+        set({ isPasteTargeting: false })
+      }
     },
     undo() {
       const { past, future, projectInfo, chart } = get()
@@ -497,7 +549,7 @@ export const useEditorStore = create<EditorState & EditorActions>()((set, get) =
       set({ previewTick: clampScroll(tick, calculateScrollLimit(get())) })
     },
     setMode(mode) {
-      set({ mode })
+      set({ mode, isPasteTargeting: false })
     },
     setMetronomeEnabled(enabled) {
       set({ metronomeEnabled: enabled })
@@ -557,12 +609,20 @@ export const useEditorStore = create<EditorState & EditorActions>()((set, get) =
         },
       )
     },
-    applyMidiImport(chart, projectInfo) {
-      const merged = projectInfo === null ? null : { ...projectInfo, offsetMs: get().projectInfo.offsetMs }
-      commit(merged === null ? { chart } : { chart, projectInfo: merged }, {
-        selectedNoteIds: [],
-        ...expandBarCountFor(merged ?? get().projectInfo, chart),
-      })
+    applyMidiImport(chart, imported) {
+      const { projectInfo } = get()
+      const merged: ProjectInfo = {
+        ...projectInfo,
+        tempo: imported.tempo ?? projectInfo.tempo,
+        meter: imported.meter ?? projectInfo.meter,
+      }
+      commit(
+        { chart, projectInfo: merged },
+        {
+          selectedNoteIds: [],
+          ...expandBarCountFor(merged, chart),
+        },
+      )
     },
     showNotice(message) {
       set({ notice: createNotice(message) })

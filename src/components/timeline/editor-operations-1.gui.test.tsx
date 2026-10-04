@@ -200,6 +200,41 @@ describe('[ノーツの編集] 譜面のノーツ', () => {
             )
           })
         })
+
+        describe('始点とレーンだけが違う点までのドラッグ', () => {
+          it('1 小節目 1 拍目の 1/2 拍後・レーン 1 から 1 小節目 1 拍目の 1/2 拍後・レーン 3 までドラッグして離すと、画面の下のメッセージに「ロングノーツの点は、前の点より後、次の点より前の時間に置いてください」が表示される', async () => {
+            const app = await startApp()
+
+            await app.timeline.drag(at(480, 1), at(480, 3))
+
+            expect(app.notice(LONG_ORDER_NOTICE)).toBeInTheDocument()
+          })
+
+          it('1 小節目 1 拍目の 1/2 拍後・レーン 1 から 1 小節目 1 拍目の 1/2 拍後・レーン 3 までドラッグして離しても、ロングノーツは作られず、譜面のノーツの代替コンテンツは空のままになる', async () => {
+            const app = await startApp()
+            await expectRejectedWith(app, LONG_ORDER_NOTICE, () => app.timeline.drag(at(480, 1), at(480, 3)))
+
+            expect(app.timeline.notes()).toEqual([])
+          })
+        })
+
+        describe('テンポ列の上までのドラッグ', () => {
+          it('1 小節目 1 拍目の 1/2 拍後・レーン 2 から、テンポ列の 1 小節目 2 拍目の 1/2 拍後の位置までドラッグして離しても、ロングノーツは作られず、譜面のノーツの代替コンテンツは空のままになる', async () => {
+            const app = await startApp()
+
+            await app.timeline.drag(at(480, 2), tempoColumnAt(1440))
+
+            expect(app.timeline.notes()).toEqual([])
+          })
+
+          it('1 小節目 1 拍目の 1/2 拍後・レーン 2 から、テンポ列の 1 小節目 2 拍目の 1/2 拍後の位置までドラッグして離しても、画面の下にメッセージは表示されない', async () => {
+            const app = await startApp()
+
+            await app.timeline.drag(at(480, 2), tempoColumnAt(1440))
+
+            expect(app.noticeTexts()).toEqual([])
+          })
+        })
       })
 
       describe('始点 1 小節目 1 拍目・レーン 1、終端 1 小節目 3 拍目・レーン 1 で終端フリックがないロングノーツだけがあるとき', () => {
@@ -242,10 +277,50 @@ describe('[ノーツの編集] 譜面のノーツ', () => {
             expect(app.timeline.notes()).toContain(expected)
           })
         })
-      })
-    })
 
-    describe('異常系', () => {
+        describe('ロングノーツの上のクリック', () => {
+          it('1 小節目 2 拍目・レーン 1 をクリックすると、画面の下のメッセージに「ロングノーツの上には、タップノーツとフリックノーツを置けません」が表示される', async () => {
+            const app = await startApp()
+            await loadChartWithoutFocus(app, [longFrom0To1920ReleasedAtLane1])
+
+            await app.timeline.click(at(960, 1))
+
+            expect(app.notice(SHORT_NOTE_ON_LONG_NOTICE)).toBeInTheDocument()
+          })
+
+          it('1 小節目 2 拍目・レーン 1 をクリックしても、タップノーツは置かれず、譜面のノーツの代替コンテンツは「ロングノーツ 始点 1 小節目 1 拍目 レーン 1、続く点 1 小節目 3 拍目 レーン 1、終端 離す」の 1 項目のままになる', async () => {
+            const app = await startApp()
+            await loadChartWithoutFocus(app, [longFrom0To1920ReleasedAtLane1])
+            await expectRejectedWith(app, SHORT_NOTE_ON_LONG_NOTICE, () => app.timeline.click(at(960, 1)))
+
+            expect(app.timeline.notes()).toEqual([
+              'ロングノーツ 始点 1 小節目 1 拍目 レーン 1、続く点 1 小節目 3 拍目 レーン 1、終端 離す',
+            ])
+          })
+        })
+
+        describe('同じレーンで時間が重なるドラッグ', () => {
+          it('1 小節目 2 拍目・レーン 1 から 1 小節目 4 拍目・レーン 1 までドラッグして離すと、画面の下のメッセージに「ロングノーツは、ほかのロングノーツと重ねられません」が表示される', async () => {
+            const app = await startApp()
+            await loadChartWithoutFocus(app, [longFrom0To1920ReleasedAtLane1])
+
+            await app.timeline.drag(at(960, 1), at(2880, 1))
+
+            expect(app.notice(LONG_ON_LONG_NOTICE)).toBeInTheDocument()
+          })
+
+          it('1 小節目 2 拍目・レーン 1 から 1 小節目 4 拍目・レーン 1 までドラッグして離しても、ロングノーツは作られず、譜面のノーツの代替コンテンツは「ロングノーツ 始点 1 小節目 1 拍目 レーン 1、続く点 1 小節目 3 拍目 レーン 1、終端 離す」の 1 項目のままになる', async () => {
+            const app = await startApp()
+            await loadChartWithoutFocus(app, [longFrom0To1920ReleasedAtLane1])
+            await expectRejectedWith(app, LONG_ON_LONG_NOTICE, () => app.timeline.drag(at(960, 1), at(2880, 1)))
+
+            expect(app.timeline.notes()).toEqual([
+              'ロングノーツ 始点 1 小節目 1 拍目 レーン 1、続く点 1 小節目 3 拍目 レーン 1、終端 離す',
+            ])
+          })
+        })
+      })
+
       describe('1 小節目 1 拍目の 1/2 拍後・レーン 2 のタップノーツだけがあるとき', () => {
         describe('ノーツのある位置のクリック', () => {
           it('1 小節目 1 拍目の 1/2 拍後の 10 ピクセル上・レーン 2 の中央をクリックすると、画面の下のメッセージに「同じ位置にノーツがあります」が表示される', async () => {
@@ -301,50 +376,6 @@ describe('[ノーツの編集] 譜面のノーツ', () => {
         })
       })
 
-      describe('始点 1 小節目 1 拍目・レーン 1、終端 1 小節目 3 拍目・レーン 1 で終端フリックがないロングノーツだけがあるとき', () => {
-        describe('ロングノーツの上のクリック', () => {
-          it('1 小節目 2 拍目・レーン 1 をクリックすると、画面の下のメッセージに「ロングノーツの上には、タップノーツとフリックノーツを置けません」が表示される', async () => {
-            const app = await startApp()
-            await loadChartWithoutFocus(app, [longFrom0To1920ReleasedAtLane1])
-
-            await app.timeline.click(at(960, 1))
-
-            expect(app.notice(SHORT_NOTE_ON_LONG_NOTICE)).toBeInTheDocument()
-          })
-
-          it('1 小節目 2 拍目・レーン 1 をクリックしても、タップノーツは置かれず、譜面のノーツの代替コンテンツは「ロングノーツ 始点 1 小節目 1 拍目 レーン 1、続く点 1 小節目 3 拍目 レーン 1、終端 離す」の 1 項目のままになる', async () => {
-            const app = await startApp()
-            await loadChartWithoutFocus(app, [longFrom0To1920ReleasedAtLane1])
-            await expectRejectedWith(app, SHORT_NOTE_ON_LONG_NOTICE, () => app.timeline.click(at(960, 1)))
-
-            expect(app.timeline.notes()).toEqual([
-              'ロングノーツ 始点 1 小節目 1 拍目 レーン 1、続く点 1 小節目 3 拍目 レーン 1、終端 離す',
-            ])
-          })
-        })
-
-        describe('同じレーンで時間が重なるドラッグ', () => {
-          it('1 小節目 2 拍目・レーン 1 から 1 小節目 4 拍目・レーン 1 までドラッグして離すと、画面の下のメッセージに「ロングノーツは、ほかのロングノーツと重ねられません」が表示される', async () => {
-            const app = await startApp()
-            await loadChartWithoutFocus(app, [longFrom0To1920ReleasedAtLane1])
-
-            await app.timeline.drag(at(960, 1), at(2880, 1))
-
-            expect(app.notice(LONG_ON_LONG_NOTICE)).toBeInTheDocument()
-          })
-
-          it('1 小節目 2 拍目・レーン 1 から 1 小節目 4 拍目・レーン 1 までドラッグして離しても、ロングノーツは作られず、譜面のノーツの代替コンテンツは「ロングノーツ 始点 1 小節目 1 拍目 レーン 1、続く点 1 小節目 3 拍目 レーン 1、終端 離す」の 1 項目のままになる', async () => {
-            const app = await startApp()
-            await loadChartWithoutFocus(app, [longFrom0To1920ReleasedAtLane1])
-            await expectRejectedWith(app, LONG_ON_LONG_NOTICE, () => app.timeline.drag(at(960, 1), at(2880, 1)))
-
-            expect(app.timeline.notes()).toEqual([
-              'ロングノーツ 始点 1 小節目 1 拍目 レーン 1、続く点 1 小節目 3 拍目 レーン 1、終端 離す',
-            ])
-          })
-        })
-      })
-
       describe('始点 1 小節目 1 拍目・レーン 0、終端 1 小節目 3 拍目・レーン 4 で終端フリックがないロングノーツだけがあるとき', () => {
         describe('途中でレーン 2 を横切られるドラッグ', () => {
           it('1 小節目 1 拍目の 1/2 拍後・レーン 2 から 1 小節目 2 拍目の 1/2 拍後・レーン 2 までドラッグして離すと、画面の下のメッセージに「ロングノーツは、ほかのロングノーツと重ねられません」が表示される', async () => {
@@ -388,43 +419,6 @@ describe('[ノーツの編集] 譜面のノーツ', () => {
           })
         })
       })
-
-      describe('ノーツがないとき', () => {
-        describe('テンポ列の上までのドラッグ', () => {
-          it('1 小節目 1 拍目の 1/2 拍後・レーン 2 から、テンポ列の 1 小節目 2 拍目の 1/2 拍後の位置までドラッグして離しても、ロングノーツは作られず、譜面のノーツの代替コンテンツは空のままになる', async () => {
-            const app = await startApp()
-
-            await app.timeline.drag(at(480, 2), tempoColumnAt(1440))
-
-            expect(app.timeline.notes()).toEqual([])
-          })
-
-          it('1 小節目 1 拍目の 1/2 拍後・レーン 2 から、テンポ列の 1 小節目 2 拍目の 1/2 拍後の位置までドラッグして離しても、画面の下にメッセージは表示されない', async () => {
-            const app = await startApp()
-
-            await app.timeline.drag(at(480, 2), tempoColumnAt(1440))
-
-            expect(app.noticeTexts()).toEqual([])
-          })
-        })
-
-        describe('始点とレーンだけが違う点までのドラッグ', () => {
-          it('1 小節目 1 拍目の 1/2 拍後・レーン 1 から 1 小節目 1 拍目の 1/2 拍後・レーン 3 までドラッグして離すと、画面の下のメッセージに「ロングノーツの点は、前の点より後、次の点より前の時間に置いてください」が表示される', async () => {
-            const app = await startApp()
-
-            await app.timeline.drag(at(480, 1), at(480, 3))
-
-            expect(app.notice(LONG_ORDER_NOTICE)).toBeInTheDocument()
-          })
-
-          it('1 小節目 1 拍目の 1/2 拍後・レーン 1 から 1 小節目 1 拍目の 1/2 拍後・レーン 3 までドラッグして離しても、ロングノーツは作られず、譜面のノーツの代替コンテンツは空のままになる', async () => {
-            const app = await startApp()
-            await expectRejectedWith(app, LONG_ORDER_NOTICE, () => app.timeline.drag(at(480, 1), at(480, 3)))
-
-            expect(app.timeline.notes()).toEqual([])
-          })
-        })
-      })
     })
   })
 
@@ -451,24 +445,7 @@ describe('[ノーツの編集] 譜面のノーツ', () => {
 
             expect(app.timeline.notes()).toEqual([expected])
           })
-        })
-      })
 
-      it('始点 1 小節目 1 拍目の 1/2 拍後・レーン 2、終端 1 小節目 2 拍目の 1/2 拍後・レーン 2 で右の終端フリックがあるロングノーツだけがあるとき、終端から 1 小節目 3 拍目の 1/2 拍後・レーン 4 までドラッグして離すと、譜面のノーツの代替コンテンツは、「ロングノーツ 始点 1 小節目 1 拍目の 1/2 拍後 レーン 2、続く点 1 小節目 2 拍目の 1/2 拍後 レーン 2、1 小節目 3 拍目の 1/2 拍後 レーン 4、終端 離す」の 1 項目だけになる', async () => {
-        const app = await startApp()
-        await loadChartWithoutFocus(app, [longFrom480To1440FlickedRightAtLane2])
-
-        await app.timeline.drag(at(1440, 2), at(2400, 4))
-
-        expect(app.timeline.notes()).toEqual([
-          'ロングノーツ 始点 1 小節目 1 拍目の 1/2 拍後 レーン 2、続く点 1 小節目 2 拍目の 1/2 拍後 レーン 2、1 小節目 3 拍目の 1/2 拍後 レーン 4、終端 離す',
-        ])
-      })
-    })
-
-    describe('異常系', () => {
-      describe('始点 1 小節目 1 拍目の 1/2 拍後・レーン 2、終端 1 小節目 2 拍目の 1/2 拍後・レーン 2 で終端フリックがないロングノーツだけがあるとき', () => {
-        describe('ロングノーツの終端からのドラッグ', () => {
           it.each([
             ['終端から 1 小節目 2 拍目・レーン 2 までドラッグして離すと', at(960, 2)],
             ['終端から 1 小節目 2 拍目の 1/2 拍後・レーン 4 までドラッグして離すと', at(1440, 4)],
@@ -494,6 +471,17 @@ describe('[ノーツの編集] 譜面のノーツ', () => {
             ])
           })
         })
+      })
+
+      it('始点 1 小節目 1 拍目の 1/2 拍後・レーン 2、終端 1 小節目 2 拍目の 1/2 拍後・レーン 2 で右の終端フリックがあるロングノーツだけがあるとき、終端から 1 小節目 3 拍目の 1/2 拍後・レーン 4 までドラッグして離すと、譜面のノーツの代替コンテンツは、「ロングノーツ 始点 1 小節目 1 拍目の 1/2 拍後 レーン 2、続く点 1 小節目 2 拍目の 1/2 拍後 レーン 2、1 小節目 3 拍目の 1/2 拍後 レーン 4、終端 離す」の 1 項目だけになる', async () => {
+        const app = await startApp()
+        await loadChartWithoutFocus(app, [longFrom480To1440FlickedRightAtLane2])
+
+        await app.timeline.drag(at(1440, 2), at(2400, 4))
+
+        expect(app.timeline.notes()).toEqual([
+          'ロングノーツ 始点 1 小節目 1 拍目の 1/2 拍後 レーン 2、続く点 1 小節目 2 拍目の 1/2 拍後 レーン 2、1 小節目 3 拍目の 1/2 拍後 レーン 4、終端 離す',
+        ])
       })
 
       describe('始点 1 小節目 1 拍目・レーン 1、終端 1 小節目 2 拍目・レーン 1 のロングノーツと、始点 1 小節目 3 拍目・レーン 1、終端 1 小節目 4 拍目・レーン 1 のロングノーツがあるとき', () => {
@@ -658,26 +646,7 @@ describe('[ノーツの編集] 譜面のノーツ', () => {
 
             expect(app.timeline.notes()).toEqual([expected])
           })
-        })
-      })
 
-      describe('始点 1 小節目 1 拍目・レーン 1、終端 1 小節目 3 拍目・レーン 1 で終端フリックがないロングノーツだけがあるとき', () => {
-        it('本体の真ん中の 1 小節目 2 拍目・レーン 1 から Shift を押しながら 2 小節目 1 拍目・レーン 2 までドラッグして離すと、ロングノーツ全体が 3 拍後ろ・1 レーン隣へ動き、譜面のノーツの代替コンテンツは「ロングノーツ 始点 1 小節目 4 拍目 レーン 2、続く点 2 小節目 2 拍目 レーン 2、終端 離す」の 1 項目だけになる', async () => {
-          const app = await startApp()
-          await loadChartWithoutFocus(app, [longFrom0To1920ReleasedAtLane1])
-
-          await app.timeline.dragWithShift(at(960, 1), at(3840, 2))
-
-          expect(app.timeline.notes()).toEqual([
-            'ロングノーツ 始点 1 小節目 4 拍目 レーン 2、続く点 2 小節目 2 拍目 レーン 2、終端 離す',
-          ])
-        })
-      })
-    })
-
-    describe('異常系', () => {
-      describe('始点 1 小節目 1 拍目・レーン 1、続く点 1 小節目 1 拍目の 1/2 拍後・レーン 3 と 1 小節目 2 拍目・レーン 0 のロングノーツだけがあるとき', () => {
-        describe('1 つ目の続く点 (1 小節目 1 拍目の 1/2 拍後・レーン 3) の上から Shift を押しながらドラッグするとき', () => {
           it.each([
             ['終端と同じ 1 小節目 2 拍目のレーン 2 までドラッグして離すと', at(960, 2)],
             ['始点と同じ 1 小節目 1 拍目のレーン 2 までドラッグして離すと', at(0, 2)],
@@ -705,6 +674,38 @@ describe('[ノーツの編集] 譜面のノーツ', () => {
         })
       })
 
+      describe('始点 1 小節目 1 拍目・レーン 1、終端 1 小節目 3 拍目・レーン 1 で終端フリックがないロングノーツだけがあるとき', () => {
+        it('本体の真ん中の 1 小節目 2 拍目・レーン 1 から Shift を押しながら 2 小節目 1 拍目・レーン 2 までドラッグして離すと、ロングノーツ全体が 3 拍後ろ・1 レーン隣へ動き、譜面のノーツの代替コンテンツは「ロングノーツ 始点 1 小節目 4 拍目 レーン 2、続く点 2 小節目 2 拍目 レーン 2、終端 離す」の 1 項目だけになる', async () => {
+          const app = await startApp()
+          await loadChartWithoutFocus(app, [longFrom0To1920ReleasedAtLane1])
+
+          await app.timeline.dragWithShift(at(960, 1), at(3840, 2))
+
+          expect(app.timeline.notes()).toEqual([
+            'ロングノーツ 始点 1 小節目 4 拍目 レーン 2、続く点 2 小節目 2 拍目 レーン 2、終端 離す',
+          ])
+        })
+
+        it('本体の真ん中の 1 小節目 2 拍目・レーン 1 から Shift を押しながら 1 小節目 1 拍目・レーン 1 までドラッグして離すと、ロングノーツの始点が 1 小節目 1 拍目より前になり、画面の下のメッセージに「ノーツが、先頭より前か、レーンの範囲外になります。位置をずらすか、レーン数を増やしてください」が表示される', async () => {
+          const app = await startApp()
+          await loadChartWithoutFocus(app, [longFrom0To1920ReleasedAtLane1])
+
+          await app.timeline.dragWithShift(at(960, 1), at(0, 1))
+
+          expect(app.notice(OUT_OF_LANE_NOTICE)).toBeInTheDocument()
+        })
+
+        it('本体の真ん中の 1 小節目 2 拍目・レーン 1 から Shift を押しながら 1 小節目 1 拍目・レーン 1 までドラッグして離しても、ロングノーツは動かず、譜面のノーツの代替コンテンツは「ロングノーツ 始点 1 小節目 1 拍目 レーン 1、続く点 1 小節目 3 拍目 レーン 1、終端 離す」の 1 項目のままになる', async () => {
+          const app = await startApp()
+          await loadChartWithoutFocus(app, [longFrom0To1920ReleasedAtLane1])
+          await expectRejectedWith(app, OUT_OF_LANE_NOTICE, () => app.timeline.dragWithShift(at(960, 1), at(0, 1)))
+
+          expect(app.timeline.notes()).toEqual([
+            'ロングノーツ 始点 1 小節目 1 拍目 レーン 1、続く点 1 小節目 3 拍目 レーン 1、終端 離す',
+          ])
+        })
+      })
+
       describe('始点 1 小節目 1 拍目・レーン 1、終端 1 小節目 3 拍目・レーン 1 のロングノーツと、始点 2 小節目 1 拍目・レーン 2、終端 2 小節目 2 拍目・レーン 2 のロングノーツがあるとき', () => {
         it('1 つ目のロングノーツの本体の真ん中の 1 小節目 2 拍目・レーン 1 から Shift を押しながら 2 小節目 1 拍目・レーン 2 までドラッグして離すと、画面の下のメッセージに「ロングノーツは、ほかのロングノーツと重ねられません」が表示される', async () => {
           const app = await startApp()
@@ -723,27 +724,6 @@ describe('[ノーツの編集] 譜面のノーツ', () => {
           expect(app.timeline.notes()).toEqual([
             'ロングノーツ 始点 1 小節目 1 拍目 レーン 1、続く点 1 小節目 3 拍目 レーン 1、終端 離す',
             'ロングノーツ 始点 2 小節目 1 拍目 レーン 2、続く点 2 小節目 2 拍目 レーン 2、終端 離す',
-          ])
-        })
-      })
-
-      describe('始点 1 小節目 1 拍目・レーン 1、終端 1 小節目 3 拍目・レーン 1 で終端フリックがないロングノーツだけがあるとき', () => {
-        it('本体の真ん中の 1 小節目 2 拍目・レーン 1 から Shift を押しながら 1 小節目 1 拍目・レーン 1 までドラッグして離すと、ロングノーツの始点が 1 小節目 1 拍目より前になり、画面の下のメッセージに「ノーツが、先頭より前か、レーンの範囲外になります。位置をずらすか、レーン数を増やしてください」が表示される', async () => {
-          const app = await startApp()
-          await loadChartWithoutFocus(app, [longFrom0To1920ReleasedAtLane1])
-
-          await app.timeline.dragWithShift(at(960, 1), at(0, 1))
-
-          expect(app.notice(OUT_OF_LANE_NOTICE)).toBeInTheDocument()
-        })
-
-        it('本体の真ん中の 1 小節目 2 拍目・レーン 1 から Shift を押しながら 1 小節目 1 拍目・レーン 1 までドラッグして離しても、ロングノーツは動かず、譜面のノーツの代替コンテンツは「ロングノーツ 始点 1 小節目 1 拍目 レーン 1、続く点 1 小節目 3 拍目 レーン 1、終端 離す」の 1 項目のままになる', async () => {
-          const app = await startApp()
-          await loadChartWithoutFocus(app, [longFrom0To1920ReleasedAtLane1])
-          await expectRejectedWith(app, OUT_OF_LANE_NOTICE, () => app.timeline.dragWithShift(at(960, 1), at(0, 1)))
-
-          expect(app.timeline.notes()).toEqual([
-            'ロングノーツ 始点 1 小節目 1 拍目 レーン 1、続く点 1 小節目 3 拍目 レーン 1、終端 離す',
           ])
         })
       })
@@ -803,9 +783,7 @@ describe('[ノーツの編集] フリックを付けられる点', () => {
           'ロングノーツ 始点 1 小節目 1 拍目の 1/2 拍後 レーン 2、続く点 1 小節目 2 拍目の 1/2 拍後 レーン 2、終端 右フリック',
         )
       })
-    })
 
-    describe('異常系', () => {
       describe('始点 1 小節目 1 拍目の 1/2 拍後・レーン 2、続く点 1 小節目 2 拍目の 1/2 拍後・レーン 2 と 1 小節目 3 拍目の 1/2 拍後・レーン 2 のロングノーツだけがあり、その始点の上にマウスを置いているとき', () => {
         it('上向きの矢印キーを押すと、画面の下のメッセージに「フリックを付けられるのは、ロングノーツの最後の終端だけです」が表示される', async () => {
           const app = await startApp()
@@ -860,9 +838,7 @@ describe('[ノーツの編集] フリックの解除', () => {
           expect(app.timeline.notes()).toContain(expected)
         },
       )
-    })
 
-    describe('異常系', () => {
       describe('1 小節目 1 拍目の 1/2 拍後・レーン 0 のタップノーツと、始点 1 小節目 1 拍目の 1/2 拍後・レーン 2、続く点 1 小節目 2 拍目の 1/2 拍後・レーン 2 と 1 小節目 3 拍目の 1/2 拍後・レーン 2 のロングノーツがあるとき', () => {
         it.each([
           {
@@ -911,7 +887,7 @@ describe('[ノーツの編集] フリックの解除', () => {
 
 describe('[ノーツの編集] マウスを置いたノーツの点', () => {
   describe('矢印キーの押下', () => {
-    describe('異常系', () => {
+    describe('正常系', () => {
       describe('1 小節目 1 拍目の 1/2 拍後・レーン 2 のタップノーツだけがあるとき', () => {
         it('そのタップノーツの上にマウスを置いて右クリックで削除したあと、マウスを動かさずに上向きの矢印キーを押すと、画面の下のメッセージに「ノーツの点が見つかりません。ノーツの上にマウスを置いて、もう一度操作してください」が表示される', async () => {
           const app = await startApp()
@@ -971,7 +947,7 @@ describe('[ノーツの編集] マウスを置いたノーツの点', () => {
 
 describe('[ノーツの個数の上限] ノーツの作成', () => {
   describe('ノーツが 3000 個あるとき', () => {
-    describe('異常系', () => {
+    describe('正常系', () => {
       it('ノーツのない 1 小節目 1 拍目の 1/4 拍後・レーン 2 をクリックすると、画面の下のメッセージに「ノーツは 3000 個までです」が表示され、新しいノーツは置かれず、譜面のノーツの代替コンテンツは 3000 項目のままになる', async () => {
         const app = await startWithMaxNotes()
 

@@ -33,6 +33,7 @@ import {
   MIN_BPM,
   MIN_METER_NUM,
 } from '../../domain/constants.ts'
+import { placeClipboardNotes } from '../../domain/chartEditing.ts'
 import { calculateGridStepTicks, snapTickToGrid } from '../../domain/grid.ts'
 import type { ChartPoint } from '../../domain/types.ts'
 import { calculateScrollLimit } from '../../domain/scrollbar.ts'
@@ -44,6 +45,13 @@ import { useEditorStore } from '../../state/editorStore.ts'
 import { useCanvasSize } from '../../hooks/useCanvasSize.ts'
 
 const LANE_MARKER_HIT_PX = 10
+
+/** 貼り付けのプレビューのノーツに付ける id。プレビューは置いたノーツではないので、固定の値にする。 */
+const PREVIEW_NOTE_ID = 'paste-preview'
+
+function createPreviewNoteId(): string {
+  return PREVIEW_NOTE_ID
+}
 
 /** テンポと拍子の入力欄の幅 (px)。 */
 const VALUE_EDITOR_INPUT_WIDTH_PX = 112
@@ -160,6 +168,10 @@ export function TimelineCanvas() {
       gridDivision: state.gridDivision,
       waveform: state.audio === null ? null : { peaks: state.audio.peaks, peakSeconds: state.audio.peakSeconds },
       overlay: overlayRef.current,
+      pastePreview:
+        state.isPasteTargeting && state.cursorPoint !== null
+          ? placeClipboardNotes(state.clipboard, state.cursorPoint, createPreviewNoteId)
+          : null,
       editingTarget: editingTargetRef.current,
     })
   }, [readViewport])
@@ -332,8 +344,15 @@ export function TimelineCanvas() {
     if (isSideColumn(column)) {
       return
     }
-    event.currentTarget.setPointerCapture(event.pointerId)
     const state = useEditorStore.getState()
+    if (state.isPasteTargeting) {
+      const target = resolveGridPoint(viewport, state.gridDivision, position, calculateScrollLimit(state))
+      if (target !== null) {
+        state.pasteAt(target)
+      }
+      return
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
     const hit = findPointAt(state.chart, viewport, position.x, position.y)
     const longBody = hit === null ? findLongBodyAt(state.chart, viewport, position.x, position.y) : null
     dragRef.current = {

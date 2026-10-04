@@ -14,6 +14,8 @@ import {
   tapRange,
 } from './midiImport.midi-import-1.helpers.ts'
 
+const C4 = 72
+
 describe('[MIDI 取り込み] タップノーツの判定', () => {
   describe('MIDI の取り込み', () => {
     describe('正常系', () => {
@@ -218,27 +220,37 @@ describe('[MIDI 取り込み] ロングノーツの長さ', () => {
 
           expect(result.chart.notes).toMatchObject([{ type: 'long', path: [{ tick: 2880 }] }])
         })
-      })
 
-      describe('異常系', () => {
-        it('ベロシティが 35・長さが 0 のとき、MIDI を取り込むと、譜面のノーツは 0 個になり、取り込めないノートは、tick 960・レーン 0 の「長さが 0 のロングノーツ」の 1 件だけになる', () => {
+        it('ベロシティが 35 で、MIDI の tick が 480、長さが 0 のとき、MIDI を取り込むと、譜面のノーツは 0 個になる', () => {
           const result = runImport({ notes: [{ tick: 480, pitch: C2, velocity: 35, durationTicks: 0 }] })
 
           expect(result.chart.notes).toHaveLength(0)
+        })
+
+        it('ベロシティが 35 で、MIDI の tick が 480、長さが 0 のとき、MIDI を取り込むと、取り込めないノートは、tick 960・レーン 0 の「長さが 0 のロングノーツ」の 1 件だけになる', () => {
+          const result = runImport({ notes: [{ tick: 480, pitch: C2, velocity: 35, durationTicks: 0 }] })
+
           expect(result.warnings).toEqual([{ reason: 'zero-length-long', tick: 960, lane: 0 }])
         })
 
-        it('音程 C#2 をレーン 1 に割り当て、同じ tick に、長さ 0 でベロシティ 35 の音程 C2 のノートと、ベロシティ 80 の音程 C#2 のノートがあるとき、MIDI を取り込むと、譜面のノーツは、レーン 1 のタップノーツだけになる', () => {
-          const result = runImport({
-            pitchToLane: LANE_0_AND_1,
-            ticksPerQuarter: 480,
-            notes: [
-              { tick: 480, pitch: C2, velocity: 35, durationTicks: 0 },
-              { tick: 480, pitch: CSHARP2, velocity: 80 },
-            ],
+        describe('音程 C#2 をレーン 1 に割り当て、MIDI の tick 480 に、長さ 0 でベロシティ 35 の音程 C2 のノートと、ベロシティ 80 の音程 C#2 のノートがあるとき', () => {
+          const importZeroLengthAndTap = (): ReturnType<typeof runImport> =>
+            runImport({
+              pitchToLane: LANE_0_AND_1,
+              ticksPerQuarter: 480,
+              notes: [
+                { tick: 480, pitch: C2, velocity: 35, durationTicks: 0 },
+                { tick: 480, pitch: CSHARP2, velocity: 80 },
+              ],
+            })
+
+          it('MIDI を取り込むと、譜面のノーツは、tick 960・レーン 1 のタップノーツだけになる', () => {
+            expect(importZeroLengthAndTap().chart.notes).toMatchObject([{ type: 'tap', tick: 960, lane: 1 }])
           })
 
-          expect(result.chart.notes).toMatchObject([{ type: 'tap', tick: 960, lane: 1 }])
+          it('MIDI を取り込むと、取り込めないノートは、tick 960・レーン 0 の「長さが 0 のロングノーツ」の 1 件だけになる', () => {
+            expect(importZeroLengthAndTap().warnings).toEqual([{ reason: 'zero-length-long', tick: 960, lane: 0 }])
+          })
         })
       })
     })
@@ -247,9 +259,9 @@ describe('[MIDI 取り込み] ロングノーツの長さ', () => {
 
 describe('[MIDI 取り込み] ノーツの種類の判定', () => {
   describe('MIDI の取り込み', () => {
-    describe('異常系', () => {
-      describe('ベロシティが、どの最小ベロシティ・最大ベロシティにも入らないとき', () => {
-        it.each([
+    describe('正常系', () => {
+      describe('MIDI の分解能が 480 で、MIDI の tick 480 に、ベロシティが、どの最小ベロシティ・最大ベロシティにも入らないノートがあるとき', () => {
+        const outOfRangeCases = [
           {
             condition: 'ベロシティが 1、タップノーツの最小ベロシティが 2・最大ベロシティが 127 のとき',
             velocityRanges: [tapRange(2, 127)],
@@ -260,42 +272,68 @@ describe('[MIDI 取り込み] ノーツの種類の判定', () => {
             velocityRanges: [tapRange(1, 100)],
             velocity: 101,
           },
-        ])(
-          '$condition、譜面のノーツは 0 個になり、取り込めないノートは、tick 960・レーン 0 の「ベロシティが範囲外」の 1 件だけになる',
+        ]
+
+        it.each(outOfRangeCases)(
+          '$condition、MIDI を取り込むと、譜面のノーツは 0 個になる',
           ({ velocityRanges, velocity }) => {
             const result = runImport({ velocityRanges, notes: [{ tick: 480, pitch: C2, velocity }] })
 
             expect(result.chart.notes).toHaveLength(0)
+          },
+        )
+
+        it.each(outOfRangeCases)(
+          '$condition、MIDI を取り込むと、取り込めないノートは、tick 960・レーン 0 の「ベロシティが範囲外」の 1 件だけになる',
+          ({ velocityRanges, velocity }) => {
+            const result = runImport({ velocityRanges, notes: [{ tick: 480, pitch: C2, velocity }] })
+
             expect(result.warnings).toEqual([{ reason: 'velocity-out-of-range', tick: 960, lane: 0 }])
           },
         )
 
         describe('タップノーツの最小ベロシティが 1・最大ベロシティが 50 と、タップノーツの最小ベロシティが 60・最大ベロシティが 127 のとき', () => {
-          it.each([{ velocity: 51 }, { velocity: 59 }])(
-            'ベロシティが $velocity のとき、譜面のノーツは 0 個になり、取り込めないノートは、tick 960・レーン 0 の「ベロシティが範囲外」の 1 件だけになる',
-            ({ velocity }) => {
-              const result = runImport({
-                velocityRanges: [tapRange(1, 50), tapRange(60, 127)],
-                notes: [{ tick: 480, pitch: C2, velocity }],
-              })
+          const importWithVelocity = (velocity: number): ReturnType<typeof runImport> =>
+            runImport({
+              velocityRanges: [tapRange(1, 50), tapRange(60, 127)],
+              notes: [{ tick: 480, pitch: C2, velocity }],
+            })
 
-              expect(result.chart.notes).toHaveLength(0)
-              expect(result.warnings).toEqual([{ reason: 'velocity-out-of-range', tick: 960, lane: 0 }])
+          it.each([{ velocity: 51 }, { velocity: 59 }])(
+            'ベロシティが $velocity のとき、MIDI を取り込むと、譜面のノーツは 0 個になる',
+            ({ velocity }) => {
+              expect(importWithVelocity(velocity).chart.notes).toHaveLength(0)
+            },
+          )
+
+          it.each([{ velocity: 51 }, { velocity: 59 }])(
+            'ベロシティが $velocity のとき、MIDI を取り込むと、取り込めないノートは、tick 960・レーン 0 の「ベロシティが範囲外」の 1 件だけになる',
+            ({ velocity }) => {
+              expect(importWithVelocity(velocity).warnings).toEqual([
+                { reason: 'velocity-out-of-range', tick: 960, lane: 0 },
+              ])
             },
           )
         })
       })
 
-      it('MIDI の分解能が 480、タップノーツの最小ベロシティが 2・最大ベロシティが 127 で、MIDI の tick 0 のベロシティ 1 と tick 480 のベロシティ 80 のノートがあるとき、MIDI を取り込むと、譜面のノーツは、tick 960 のタップノーツだけになる', () => {
-        const result = runImport({
-          velocityRanges: [tapRange(2, 127)],
-          notes: [
-            { tick: 0, pitch: C2, velocity: 1 },
-            { tick: 480, pitch: C2, velocity: 80 },
-          ],
+      describe('MIDI の分解能が 480、タップノーツの最小ベロシティが 2・最大ベロシティが 127 で、MIDI の tick 0 のベロシティ 1 と tick 480 のベロシティ 80 のノートがあるとき', () => {
+        const importOutOfRangeAndTap = (): ReturnType<typeof runImport> =>
+          runImport({
+            velocityRanges: [tapRange(2, 127)],
+            notes: [
+              { tick: 0, pitch: C2, velocity: 1 },
+              { tick: 480, pitch: C2, velocity: 80 },
+            ],
+          })
+
+        it('MIDI を取り込むと、譜面のノーツは、tick 960 のタップノーツだけになる', () => {
+          expect(importOutOfRangeAndTap().chart.notes).toMatchObject([{ type: 'tap', tick: 960, lane: 0 }])
         })
 
-        expect(result.chart.notes).toMatchObject([{ type: 'tap', tick: 960, lane: 0 }])
+        it('MIDI を取り込むと、取り込めないノートは、tick 0・レーン 0 の「ベロシティが範囲外」の 1 件だけになる', () => {
+          expect(importOutOfRangeAndTap().warnings).toEqual([{ reason: 'velocity-out-of-range', tick: 0, lane: 0 }])
+        })
       })
     })
   })
@@ -417,34 +455,72 @@ describe('[MIDI 取り込み] 音程とレーンの対応', () => {
 
         expect(importedLanes(result)).toEqual([lane])
       })
-    })
 
-    describe('異常系', () => {
-      it('ノートの音程 C3 が、レーンに割り当てた音程 C2・C#2 にないとき、MIDI を取り込むと、譜面のノーツは 0 個になる', () => {
-        const result = runImport({
-          pitchToLane: LANE_0_AND_1,
-          notes: [{ tick: 480, pitch: C3, velocity: 80 }],
+      describe('レーンに割り当てた音程 C2・C#2 にない音程 C3 のノートが 1 つあるとき', () => {
+        const importUnassignedPitch = (): ReturnType<typeof runImport> =>
+          runImport({
+            pitchToLane: LANE_0_AND_1,
+            notes: [{ tick: 480, pitch: C3, velocity: 80 }],
+          })
+
+        it('MIDI を取り込むと、譜面のノーツは 0 個になる', () => {
+          expect(importUnassignedPitch().chart.notes).toHaveLength(0)
         })
 
-        expect(result.chart.notes).toHaveLength(0)
+        it('MIDI を取り込むと、取り込めないノートは、音程 C3・1 個の「レーンに割り当てていない音程」の 1 件だけになる', () => {
+          expect(importUnassignedPitch().warnings).toEqual([{ reason: 'pitch-not-assigned', pitch: C3, count: 1 }])
+        })
+      })
+
+      it('レーンに割り当てた音程 C2・C#2 にない音程 C3 のノートが 2 つあるとき、MIDI を取り込むと、取り込めないノートは、音程 C3・2 個の「レーンに割り当てていない音程」の 1 件だけになる', () => {
+        const result = runImport({
+          pitchToLane: LANE_0_AND_1,
+          notes: [
+            { tick: 480, pitch: C3, velocity: 80 },
+            { tick: 960, pitch: C3, velocity: 80 },
+          ],
+        })
+
+        expect(result.warnings).toEqual([{ reason: 'pitch-not-assigned', pitch: C3, count: 2 }])
+      })
+
+      it('レーンに割り当てた音程 C2・C#2 にない音程 C4 と音程 C3 のノートが、この順に 1 つずつあるとき、MIDI を取り込むと、取り込めないノートは、音程 C3・1 個、音程 C4・1 個の「レーンに割り当てていない音程」の 2 件が、この順になる', () => {
+        const result = runImport({
+          pitchToLane: LANE_0_AND_1,
+          notes: [
+            { tick: 480, pitch: C4, velocity: 80 },
+            { tick: 960, pitch: C3, velocity: 80 },
+          ],
+        })
+
+        expect(result.warnings).toEqual([
+          { reason: 'pitch-not-assigned', pitch: C3, count: 1 },
+          { reason: 'pitch-not-assigned', pitch: C4, count: 1 },
+        ])
       })
     })
   })
 })
 
 describe('[MIDI 取り込み] 重複したノート', () => {
-  describe('異常系', () => {
-    it('MIDI の分解能が 480 で、MIDI の tick 480 に、トラック 1 のベロシティ 80 と、トラック 2 のベロシティ 15 の、音程 C2 のノートがあるとき、MIDI を取り込むと、譜面のノーツは、tick 960・レーン 0 のタップノーツだけになり、取り込めないノートは、tick 960・レーン 0 の「位置の重複」の 1 件だけになる', () => {
-      const result = runImportFromMidiFile({
-        ticksPerQuarter: 480,
-        notes: [
-          { tick: 480, pitch: 'C2', velocity: 80, durationTicks: 0, track: 0 },
-          { tick: 480, pitch: 'C2', velocity: 15, durationTicks: 0, track: 1 },
-        ],
+  describe('正常系', () => {
+    describe('MIDI の分解能が 480 で、MIDI の tick 480 に、トラック 1 のベロシティ 80 と、トラック 2 のベロシティ 15 の、音程 C2 のノートがあるとき', () => {
+      const importDuplicateNotes = (): ReturnType<typeof runImportFromMidiFile> =>
+        runImportFromMidiFile({
+          ticksPerQuarter: 480,
+          notes: [
+            { tick: 480, pitch: 'C2', velocity: 80, durationTicks: 0, track: 0 },
+            { tick: 480, pitch: 'C2', velocity: 15, durationTicks: 0, track: 1 },
+          ],
+        })
+
+      it('MIDI を取り込むと、譜面のノーツは、tick 960・レーン 0 のタップノーツだけになる', () => {
+        expect(importDuplicateNotes().chart.notes).toMatchObject([{ type: 'tap', tick: 960, lane: 0 }])
       })
 
-      expect(result.chart.notes).toMatchObject([{ type: 'tap', tick: 960, lane: 0 }])
-      expect(result.warnings).toEqual([{ reason: 'duplicate-position', tick: 960, lane: 0 }])
+      it('MIDI を取り込むと、取り込めないノートは、tick 960・レーン 0 の「位置の重複」の 1 件だけになる', () => {
+        expect(importDuplicateNotes().warnings).toEqual([{ reason: 'duplicate-position', tick: 960, lane: 0 }])
+      })
     })
   })
 })
@@ -510,9 +586,7 @@ describe('[MIDI 取り込み] テンポの取り込み', () => {
           expect(result.projectInfo.tempo).toEqual(expected)
         })
       })
-    })
 
-    describe('異常系', () => {
       it('MIDI の tick 0 に 4 分音符 1 つあたり 500000 マイクロ秒と 1000000 マイクロ秒のテンポがこの順に並ぶとき、MIDI を取り込むと、テンポは tick 0 で BPM 60 だけになる', () => {
         const result = runImport({
           tempos: [
@@ -565,9 +639,7 @@ describe('[MIDI 取り込み] 拍子の取り込み', () => {
           expect(result.projectInfo.meter).toEqual(expected)
         })
       })
-    })
 
-    describe('異常系', () => {
       it('MIDI の tick 0 に 3/4 と 6/8 の拍子がこの順に並ぶとき、MIDI を取り込むと、拍子は tick 0 で 6/8 だけになる', () => {
         const result = runImport({
           timeSignatures: [

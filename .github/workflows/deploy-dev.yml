@@ -19,9 +19,27 @@ jobs:
     name: CI
     uses: ./.github/workflows/ci.yml
 
+  determine-version:
+    name: バージョンの判定
+    runs-on: ubicloud-standard-2
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: チェックアウト
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Git タグからバージョンを求める
+        id: version
+        run: |
+          VERSION=$(git describe --tags --always)
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Detected version: ${VERSION}"
+
   deploy:
     name: Firebase Hosting を dev へデプロイ
-    needs: test
+    needs: [test, determine-version]
     runs-on: ubicloud-standard-2
     timeout-minutes: 15
     environment: dev
@@ -50,13 +68,39 @@ jobs:
           VITE_FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
           VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.FIREBASE_STORAGE_BUCKET }}
           VITE_FIREBASE_APP_ID: ${{ vars.FIREBASE_APP_ID }}
+          VITE_BUILD_VERSION: ${{ needs.determine-version.outputs.version }}
         run: npm run build
       - name: Firebase にデプロイする
         run: npx firebase-tools deploy --only hosting --project ${{ vars.FIREBASE_PROJECT_ID }}
 
-  # カバレッジはマージ時点の状態として公開する (テストが走るのはこのマージ実行のみ)
-  publish-coverage:
-    name: カバレッジを GitHub Pages へ公開する
+  smoke:
+    name: デプロイ後のスモークテスト (dev)
+    needs: deploy
+    runs-on: ubicloud-standard-2
+    timeout-minutes: 10
+    environment: dev
+    steps:
+      - name: チェックアウト
+        uses: actions/checkout@v7
+      - name: Node.js を用意する
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: package.json
+          cache: npm
+      - name: 依存関係をインストールする
+        run: npm ci
+      - name: Playwright のブラウザを入れる
+        run: npx playwright install --with-deps chromium
+      - name: スモークテストを実行する
+        env:
+          SMOKE_BASE_URL: https://${{ vars.FIREBASE_PROJECT_ID }}.web.app
+          SMOKE_FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          SMOKE_FIREBASE_STORAGE_BUCKET: ${{ vars.FIREBASE_STORAGE_BUCKET }}
+        run: npm run test:smoke
+
+  # テスト観点カタログ・カバレッジはマージ時点の状態として公開する (テストが走るのはこのマージ実行のみ)
+  publish-reports:
+    name: テスト観点カタログとカバレッジを GitHub Pages へ公開する
     needs: test
     runs-on: ubicloud-standard-2
     timeout-minutes: 5
@@ -68,6 +112,27 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: チェックアウト
+        uses: actions/checkout@v7
+      - name: Python を用意する
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: JUnit XML を取得する
+        uses: actions/download-artifact@v8
+        with:
+          pattern: junit-*
+          path: junit-artifacts
+      # カバレッジページとは別ページにするため、既存 URL に影響しないルート直下に生成する。
+      - name: テスト観点カタログを生成する
+        run: |
+          mkdir -p _site
+          python scripts/generate_behavior_catalog.py \
+            --format html \
+            --commit "${GITHUB_SHA}" \
+            --section "外から見た振る舞い:全テスト:junit-artifacts/junit-vitest/vitest-junit.xml" \
+            --section "外から見た振る舞い:E2E:junit-artifacts/junit-e2e/e2e-junit.xml" \
+            > _site/index.html
       - name: カバレッジレポートを取得する
         uses: actions/download-artifact@v8
         with:

@@ -343,7 +343,7 @@ describe('[クラウドに保存] 音源の保存と置き換え', () => {
 
 describe('[クラウドに保存] 同じ曲名のプロジェクトとの衝突', () => {
   describe('クラウドに曲「テスト曲」のオフセット 0 のプロジェクトが既にあり、このエディタで読み込んだことも保存したこともないとき、オフセットを 90 にして「保存する」を押すと', () => {
-    describe('異常系', () => {
+    describe('正常系', () => {
       it(`ダイアログに「${SAME_TITLE_CONFLICT}」と表示される`, async () => {
         const app = await startSignedIn()
         await app.cloud.putProject({ title: SONG, offsetMs: 0 })
@@ -380,7 +380,7 @@ describe('[クラウドに保存] 同じ曲名のプロジェクトとの衝突'
   })
 
   describe('クラウドから開いた曲「テスト曲」が、開いたあとにほかでオフセット 90 に更新されたとき、「譜面設定」でレーン数を 6 にして「保存する」を押すと', () => {
-    describe('異常系', () => {
+    describe('正常系', () => {
       it(`ダイアログに「${UPDATED_ELSEWHERE_CONFLICT}」と表示される`, async () => {
         const app = await startSignedIn()
         await app.cloud.putProject({ title: SONG, offsetMs: 0, updatedAt: 1000 })

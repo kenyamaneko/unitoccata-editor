@@ -200,6 +200,24 @@ describe('[プロジェクト情報編集] テンポ列', () => {
 
           expect(app.projectInfo.offsetInput()).toHaveDisplayValue('120')
         })
+
+        it('テンポが 1 小節目 1 拍目の BPM 150 だけのとき、テンポ列の 2 小節目 1 拍目をクリックして出た入力欄に 19.99 を入力してエンターキーを押しても、BPM の下限 20 を下回るため追加されず、テンポの代替コンテンツは、「1 小節目 1 拍目 BPM 150」だけのままになる', async () => {
+          const app = await startWithTempo150()
+
+          await addInvalidTempoChange(app, 3840, '19.99')
+
+          expect(app.timeline.tempos()).toEqual(['1 小節目 1 拍目 BPM 150'])
+        })
+
+        it('テンポが 1 小節目 1 拍目の BPM 150 だけのとき、テンポ列の 2 小節目 1 拍目をクリックして出た入力欄に 19.99 を入力してエンターキーを押したあと、入力欄の値を 90 に直してエンターキーを押すと、テンポの代替コンテンツは、「1 小節目 1 拍目 BPM 150」「2 小節目 1 拍目 BPM 90」だけになる', async () => {
+          const app = await startWithTempo150()
+          await addInvalidTempoChange(app, 3840, '19.99')
+
+          await app.setText(tempoInput(app), '90')
+          await app.press('Enter')
+
+          expect(app.timeline.tempos()).toEqual(['1 小節目 1 拍目 BPM 150', '2 小節目 1 拍目 BPM 90'])
+        })
       })
 
       it('テンポが 1 小節目 1 拍目の BPM 150 だけのとき、テンポ列の 2 小節目 1 拍目に BPM 90、1 小節目 3 拍目に BPM 100 を追加して「元に戻す」ボタンを押すと、テンポの代替コンテンツは、「1 小節目 1 拍目 BPM 150」「2 小節目 1 拍目 BPM 90」だけになる', async () => {
@@ -258,26 +276,6 @@ describe('[プロジェクト情報編集] テンポ列', () => {
         const input = await openTempoInputAt(app, 3840)
 
         expect(input).toHaveDisplayValue('')
-      })
-    })
-
-    describe('異常系', () => {
-      it('テンポが 1 小節目 1 拍目の BPM 150 だけのとき、テンポ列の 2 小節目 1 拍目をクリックして出た入力欄に 19.99 を入力してエンターキーを押しても、BPM の下限 20 を下回るため追加されず、テンポの代替コンテンツは、「1 小節目 1 拍目 BPM 150」だけのままになる', async () => {
-        const app = await startWithTempo150()
-
-        await addInvalidTempoChange(app, 3840, '19.99')
-
-        expect(app.timeline.tempos()).toEqual(['1 小節目 1 拍目 BPM 150'])
-      })
-
-      it('テンポが 1 小節目 1 拍目の BPM 150 だけのとき、テンポ列の 2 小節目 1 拍目をクリックして出た入力欄に 19.99 を入力してエンターキーを押したあと、入力欄の値を 90 に直してエンターキーを押すと、テンポの代替コンテンツは、「1 小節目 1 拍目 BPM 150」「2 小節目 1 拍目 BPM 90」だけになる', async () => {
-        const app = await startWithTempo150()
-        await addInvalidTempoChange(app, 3840, '19.99')
-
-        await app.setText(tempoInput(app), '90')
-        await app.press('Enter')
-
-        expect(app.timeline.tempos()).toEqual(['1 小節目 1 拍目 BPM 150', '2 小節目 1 拍目 BPM 90'])
       })
     })
   })
@@ -356,6 +354,22 @@ describe('[プロジェクト情報編集] テンポ列', () => {
 
           expect(app.projectInfo.offsetInput()).toHaveDisplayValue('120')
         })
+
+        it('テンポが 1 小節目 1 拍目の BPM 150 だけのとき、1 小節目 1 拍目のテンポ変化点を右クリックしても、削除されず、テンポの代替コンテンツは、「1 小節目 1 拍目 BPM 150」だけのままになる', async () => {
+          const app = await startWithTempo150()
+
+          await app.timeline.rightClick(tempoColumnAt(0))
+
+          expect(app.timeline.tempos()).toEqual(['1 小節目 1 拍目 BPM 150'])
+        })
+
+        it('テンポが 1 小節目 1 拍目の BPM 150 だけのとき、1 小節目 1 拍目のテンポ変化点を右クリックすると、画面の下のメッセージに「先頭のテンポ変化点は削除できません」が出る', async () => {
+          const app = await startWithTempo150()
+
+          await app.timeline.rightClick(tempoColumnAt(0))
+
+          expect(app.notice('先頭のテンポ変化点は削除できません')).toBeInTheDocument()
+        })
       })
 
       it('テンポが 1 小節目 1 拍目の BPM 150、2 小節目 1 拍目の BPM 90、3 小節目 1 拍目の BPM 60 のとき、3 小節目 1 拍目、2 小節目 1 拍目の順にテンポ変化点を右クリックして削除し、「元に戻す」ボタンを押すと、テンポの代替コンテンツは、「1 小節目 1 拍目 BPM 150」「2 小節目 1 拍目 BPM 90」だけになる', async () => {
@@ -367,9 +381,7 @@ describe('[プロジェクト情報編集] テンポ列', () => {
 
         expect(app.timeline.tempos()).toEqual(['1 小節目 1 拍目 BPM 150', '2 小節目 1 拍目 BPM 90'])
       })
-    })
 
-    describe('異常系', () => {
       it('テンポが 1 小節目 1 拍目の BPM 150、2 小節目 1 拍目の BPM 90 のとき、テンポ列の 1 小節目 3 拍目 (テンポ変化点がない位置) を右クリックしても、何も削除されず、テンポの代替コンテンツは、「1 小節目 1 拍目 BPM 150」「2 小節目 1 拍目 BPM 90」のままになる', async () => {
         const app = await startWithTempo150And90At3840()
 
@@ -377,28 +389,12 @@ describe('[プロジェクト情報編集] テンポ列', () => {
 
         expect(app.timeline.tempos()).toEqual(['1 小節目 1 拍目 BPM 150', '2 小節目 1 拍目 BPM 90'])
       })
-
-      it('テンポが 1 小節目 1 拍目の BPM 150 だけのとき、1 小節目 1 拍目のテンポ変化点を右クリックしても、削除されず、テンポの代替コンテンツは、「1 小節目 1 拍目 BPM 150」だけのままになる', async () => {
-        const app = await startWithTempo150()
-
-        await app.timeline.rightClick(tempoColumnAt(0))
-
-        expect(app.timeline.tempos()).toEqual(['1 小節目 1 拍目 BPM 150'])
-      })
-
-      it('テンポが 1 小節目 1 拍目の BPM 150 だけのとき、1 小節目 1 拍目のテンポ変化点を右クリックすると、画面の下のメッセージに「先頭のテンポ変化点は削除できません」が出る', async () => {
-        const app = await startWithTempo150()
-
-        await app.timeline.rightClick(tempoColumnAt(0))
-
-        expect(app.notice('先頭のテンポ変化点は削除できません')).toBeInTheDocument()
-      })
     })
   })
 })
 
 describe('[プロジェクト情報編集] テンポの入力値の判定', () => {
-  describe('異常系', () => {
+  describe('正常系', () => {
     describe('テンポ列の 2 小節目 1 拍目をクリックして出た入力欄に入力して、エンターキーを押す', () => {
       it.each([
         ['BPM の下限 20 を下回る 19.9', '19.9'],
@@ -440,9 +436,7 @@ describe('[テンポ変化点の編集] BPM の入力欄', () => {
 
         expect(input).toHaveDisplayValue('120.5')
       })
-    })
 
-    describe('異常系', () => {
       it('数字以外の文字 a を入力しようとしても、入力欄の値は、空のままになる', async () => {
         const app = await startApp()
         const input = await openTempoInputAt(app, 3840)
@@ -538,6 +532,24 @@ describe('[プロジェクト情報編集] 拍子列', () => {
 
           expect(app.projectInfo.offsetInput()).toHaveDisplayValue('120')
         })
+
+        it('拍子が 1 小節目 1 拍目の 3/4 だけのとき、拍子列の 2 小節目 2 拍目をクリックして出た入力欄の値を 3 に書き換えてエンターキーを押しても、拍子として読めないため追加されず、拍子の代替コンテンツは、「1 小節目 1 拍目 3/4」だけのままになる', async () => {
+          const app = await startWithMeter34()
+
+          await addInvalidMeterChange(app, 3840, '3')
+
+          expect(app.timeline.meters()).toEqual(['1 小節目 1 拍目 3/4'])
+        })
+
+        it('拍子が 1 小節目 1 拍目の 3/4 だけのとき、拍子列の 2 小節目 2 拍目をクリックして出た入力欄の値を 3 に書き換えてエンターキーを押したあと、入力欄の値を 6/8 に直してエンターキーを押すと、拍子の代替コンテンツは、「1 小節目 1 拍目 3/4」「3 小節目 1 拍目 6/8」だけになる', async () => {
+          const app = await startWithMeter34()
+          await addInvalidMeterChange(app, 3840, '3')
+
+          await app.setText(meterInput(), '6/8')
+          await app.press('Enter')
+
+          expect(app.timeline.meters()).toEqual(['1 小節目 1 拍目 3/4', '3 小節目 1 拍目 6/8'])
+        })
       })
 
       it('拍子が 1 小節目 1 拍目の 3/4 だけのとき、拍子列の 2 小節目 2 拍目に 6/8 を追加したあと、4 小節目 3 拍目に 2/4 を追加して「元に戻す」ボタンを押すと、拍子の代替コンテンツは、「1 小節目 1 拍目 3/4」「3 小節目 1 拍目 6/8」だけになる', async () => {
@@ -546,26 +558,6 @@ describe('[プロジェクト情報編集] 拍子列', () => {
         await addMeterChange(app, 7680, '2/4')
 
         await pressUndo(app)
-
-        expect(app.timeline.meters()).toEqual(['1 小節目 1 拍目 3/4', '3 小節目 1 拍目 6/8'])
-      })
-    })
-
-    describe('異常系', () => {
-      it('拍子が 1 小節目 1 拍目の 3/4 だけのとき、拍子列の 2 小節目 2 拍目をクリックして出た入力欄の値を 3 に書き換えてエンターキーを押しても、拍子として読めないため追加されず、拍子の代替コンテンツは、「1 小節目 1 拍目 3/4」だけのままになる', async () => {
-        const app = await startWithMeter34()
-
-        await addInvalidMeterChange(app, 3840, '3')
-
-        expect(app.timeline.meters()).toEqual(['1 小節目 1 拍目 3/4'])
-      })
-
-      it('拍子が 1 小節目 1 拍目の 3/4 だけのとき、拍子列の 2 小節目 2 拍目をクリックして出た入力欄の値を 3 に書き換えてエンターキーを押したあと、入力欄の値を 6/8 に直してエンターキーを押すと、拍子の代替コンテンツは、「1 小節目 1 拍目 3/4」「3 小節目 1 拍目 6/8」だけになる', async () => {
-        const app = await startWithMeter34()
-        await addInvalidMeterChange(app, 3840, '3')
-
-        await app.setText(meterInput(), '6/8')
-        await app.press('Enter')
 
         expect(app.timeline.meters()).toEqual(['1 小節目 1 拍目 3/4', '3 小節目 1 拍目 6/8'])
       })
@@ -646,6 +638,22 @@ describe('[プロジェクト情報編集] 拍子列', () => {
 
           expect(app.projectInfo.offsetInput()).toHaveDisplayValue('120')
         })
+
+        it('拍子が 1 小節目 1 拍目の 3/4 だけのとき、1 小節目 1 拍目の拍子変化点を右クリックしても、削除されず、拍子の代替コンテンツは、「1 小節目 1 拍目 3/4」だけのままになる', async () => {
+          const app = await startWithMeter34()
+
+          await app.timeline.rightClick(meterColumnAt(0))
+
+          expect(app.timeline.meters()).toEqual(['1 小節目 1 拍目 3/4'])
+        })
+
+        it('拍子が 1 小節目 1 拍目の 3/4 だけのとき、1 小節目 1 拍目の拍子変化点を右クリックすると、画面の下のメッセージに「先頭の拍子変化点は削除できません」が出る', async () => {
+          const app = await startWithMeter34()
+
+          await app.timeline.rightClick(meterColumnAt(0))
+
+          expect(app.notice('先頭の拍子変化点は削除できません')).toBeInTheDocument()
+        })
       })
 
       it('拍子が 1 小節目 1 拍目の 3/4、3 小節目 1 拍目の 6/8、5 小節目 1 拍目の 2/4 のとき、5 小節目 1 拍目、3 小節目 1 拍目の順に拍子変化点を右クリックして削除し、「元に戻す」ボタンを押すと、拍子の代替コンテンツは、「1 小節目 1 拍目 3/4」「3 小節目 1 拍目 6/8」だけになる', async () => {
@@ -658,29 +666,11 @@ describe('[プロジェクト情報編集] 拍子列', () => {
         expect(app.timeline.meters()).toEqual(['1 小節目 1 拍目 3/4', '3 小節目 1 拍目 6/8'])
       })
     })
-
-    describe('異常系', () => {
-      it('拍子が 1 小節目 1 拍目の 3/4 だけのとき、1 小節目 1 拍目の拍子変化点を右クリックしても、削除されず、拍子の代替コンテンツは、「1 小節目 1 拍目 3/4」だけのままになる', async () => {
-        const app = await startWithMeter34()
-
-        await app.timeline.rightClick(meterColumnAt(0))
-
-        expect(app.timeline.meters()).toEqual(['1 小節目 1 拍目 3/4'])
-      })
-
-      it('拍子が 1 小節目 1 拍目の 3/4 だけのとき、1 小節目 1 拍目の拍子変化点を右クリックすると、画面の下のメッセージに「先頭の拍子変化点は削除できません」が出る', async () => {
-        const app = await startWithMeter34()
-
-        await app.timeline.rightClick(meterColumnAt(0))
-
-        expect(app.notice('先頭の拍子変化点は削除できません')).toBeInTheDocument()
-      })
-    })
   })
 })
 
 describe('[プロジェクト情報編集] 拍子の入力値の判定', () => {
-  describe('異常系', () => {
+  describe('正常系', () => {
     describe('拍子列の 2 小節目 1 拍目をクリックして出た入力欄の値を書き換えて、エンターキーを押す', () => {
       it.each([
         ['分母のない 3', '3'],
@@ -763,9 +753,7 @@ describe('[プロジェクト情報編集] オフセット', () => {
 
         expect(app.timeline.meters()).toEqual(['1 小節目 1 拍目 3/4'])
       })
-    })
 
-    describe('異常系', () => {
       it('オフセットが 120 のとき、「プロジェクト情報」ダイアログの「オフセット (ms)」を - に書き換えてエンターキーを押して閉じ、「譜面書き出し」で書き出すと、誤った入力は反映されず、書き出した譜面ファイルのオフセットは、120 のままになる', async () => {
         const app = await startApp()
         await app.loadChart([], undefined, { offsetMs: 120 })
@@ -829,9 +817,7 @@ describe('[プロジェクト情報編集] 曲名', () => {
 
         expect(app.projectInfo.songNameMessage()).toBeNull()
       })
-    })
 
-    describe('異常系', () => {
       it.each([
         { given: '半角の空白だけを入力すると', entry: '   ', message: '曲名を入力してください' },
         {

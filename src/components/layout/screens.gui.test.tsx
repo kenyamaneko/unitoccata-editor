@@ -1,5 +1,5 @@
 import { screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { startApp, type AppDriver } from '../../test/app.tsx'
 import { startSignedIn, openSaveDialogWithNames, pressSave } from '../../test/cloud-storage-1.helpers.ts'
 import { createAudioFile, createUndecodableAudioFile } from '../../test/fakeAudio.ts'
@@ -102,8 +102,14 @@ async function startWithGrid16AndTapPlacedAndLoadingAudio(): Promise<AppDriver> 
   return app
 }
 
+async function openAboutDialog(app: AppDriver): Promise<void> {
+  await app.click(within(rightPanel()).getByRole('button', { name: 'このアプリについて' }))
+  expect(app.dialog('このアプリについて'), '「このアプリについて」ダイアログが開いていません').toBeInTheDocument()
+}
+
 async function openLegalDialog(app: AppDriver, linkName: string): Promise<void> {
-  await app.click(within(rightPanel()).getByRole('link', { name: linkName }))
+  await openAboutDialog(app)
+  await app.click(within(dialogNamed(app, 'このアプリについて')).getByRole('link', { name: linkName }))
 }
 
 async function startWithLegalDialog(linkName: string): Promise<AppDriver> {
@@ -270,9 +276,7 @@ describe('[モードの切り替え] モードのタブ', () => {
 
         expectScreenShown(app)
       })
-    })
 
-    describe('異常系', () => {
       describe('画面上部の「プレビュー」タブを押す', () => {
         it.each<[string, () => Promise<AppDriver>]>([
           ['音源 song.mp3 の読み込みが終わっていないとき', startWithLoadingAudio],
@@ -303,7 +307,7 @@ describe('[モードの切り替え] モードのタブ', () => {
 
 describe('[キー操作] キーボードの操作', () => {
   describe('Ctrl+Z の押下', () => {
-    describe('異常系', () => {
+    describe('正常系', () => {
       it('タップノーツを 1 小節目 1 拍目の 1/2 拍後・レーン 2 に置いたあと、「利用規約」ダイアログが開いている間に Ctrl+Z を押しても、元に戻す操作が効かず、譜面のノーツの代替コンテンツに「タップノーツ 1 小節目 1 拍目の 1/2 拍後 レーン 2」が出たままになる', async () => {
         const app = await startWithGrid16AndTapPlacedAndLegalDialogOpen('利用規約')
 
@@ -399,7 +403,7 @@ describe('[譜面設定] 譜面設定ダイアログ', () => {
   })
 })
 
-describe('[右のパネル] ボタンの並びとリンク', () => {
+describe('[右のパネル] ボタンの並び', () => {
   describe('正常系', () => {
     it.each<readonly [string, () => Promise<AppDriver>, string, readonly string[]]>([
       [
@@ -425,25 +429,25 @@ describe('[右のパネル] ボタンの並びとリンク', () => {
       ).toEqual(buttons)
     })
 
-    it('右のパネルのリンクは、上から「利用規約」「プライバシーポリシー」の順に並ぶ', async () => {
+    it('右のパネルの「このアプリについて」ボタンは、「操作説明」ボタンより下にある', async () => {
       await startApp()
 
       expect(
         within(rightPanel())
-          .getAllByRole('link')
-          .map((link) => link.textContent),
-      ).toEqual(['利用規約', 'プライバシーポリシー'])
-    })
-
-    it('右のパネルの「利用規約」のリンクは、パネルのどのボタンよりも下にある', async () => {
-      await startApp()
-
-      const lastButton = within(rightPanel()).getAllByRole('button').at(-1)!
-
-      expect(
-        lastButton.compareDocumentPosition(within(rightPanel()).getByRole('link', { name: '利用規約' })) &
+          .getByRole('button', { name: '操作説明' })
+          .compareDocumentPosition(within(rightPanel()).getByRole('button', { name: 'このアプリについて' })) &
           Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy()
+    })
+  })
+})
+
+describe('[右のパネル] 表示されるボタン', () => {
+  describe('正常系', () => {
+    it('「プレビュー」タブを選んだ画面でも、右のパネルに「このアプリについて」ボタンがある', async () => {
+      await startInPreview()
+
+      expect(within(rightPanel()).getByRole('button', { name: 'このアプリについて' })).toBeInTheDocument()
     })
   })
 })
@@ -457,6 +461,42 @@ describe('[操作説明] 操作説明ダイアログ', () => {
         await app.click(app.button('操作説明'))
 
         expect(app.dialog('操作説明')).toHaveTextContent('ホイール: スクロール / Ctrl+ホイール: ズーム')
+      })
+    })
+  })
+})
+
+describe('[このアプリについて] このアプリについてダイアログ', () => {
+  describe('「このアプリについて」ボタンの押下', () => {
+    describe('正常系', () => {
+      it('右のパネルの「このアプリについて」ボタンを押すと、「このアプリについて」ダイアログが表示される', async () => {
+        const app = await startApp()
+
+        await openAboutDialog(app)
+
+        expect(app.dialog('このアプリについて')).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('ダイアログのバージョンの表示', () => {
+    describe('正常系', () => {
+      it('ビルド時にバージョンが v1.2.3 と指定されているとき、「このアプリについて」ダイアログに「バージョン v1.2.3」が表示される', async () => {
+        vi.stubEnv('VITE_BUILD_VERSION', 'v1.2.3')
+        const app = await startApp()
+
+        await openAboutDialog(app)
+
+        expect(within(dialogNamed(app, 'このアプリについて')).getByText('バージョン v1.2.3')).toBeInTheDocument()
+      })
+
+      it('ビルド時にバージョンが指定されていないとき、「このアプリについて」ダイアログに「バージョン」の表示は出ない', async () => {
+        vi.stubEnv('VITE_BUILD_VERSION', undefined)
+        const app = await startApp()
+
+        await openAboutDialog(app)
+
+        expect(within(dialogNamed(app, 'このアプリについて')).queryByText(/バージョン/)).not.toBeInTheDocument()
       })
     })
   })
@@ -493,7 +533,7 @@ describe('[ファイルメニュー] ファイルメニューの項目', () => {
 })
 
 describe('[ファイルメニュー] クラウドの項目', () => {
-  describe('異常系', () => {
+  describe('正常系', () => {
     describe('クラウドの設定があり、ログインしていないとき', () => {
       it.each(['クラウドに保存', 'クラウドから開く'])(
         'ファイルメニューの「%s」を押すと、画面の下のメッセージに「クラウドを使うには、ログインしてください」が表示される',
@@ -686,38 +726,50 @@ describe('[音源の読み込み] 失敗後の音源の名前', () => {
 })
 
 describe('[法務のダイアログ] 利用規約・プライバシーポリシー・ログインのダイアログの表示と操作', () => {
-  describe('右のパネルのリンクの押下', () => {
+  describe('「このアプリについて」ダイアログのリンクの押下', () => {
     describe('正常系', () => {
       it.each<readonly [string, string]>([
         ['利用規約', '利用規約'],
         ['プライバシーポリシー', 'プライバシーポリシー'],
-      ])('右のパネルの「%s」を押すと、エディタ画面の上に「%s」ダイアログが表示される', async (linkName, dialogName) => {
-        const app = await startApp()
+      ])(
+        '「このアプリについて」ダイアログの「%s」を押すと、エディタ画面の上に「%s」ダイアログが表示される',
+        async (linkName, dialogName) => {
+          const app = await startApp()
 
-        await openLegalDialog(app, linkName)
+          await openLegalDialog(app, linkName)
 
-        expect(app.dialog(dialogName)).toBeInTheDocument()
-      })
+          expect(app.dialog(dialogName)).toBeInTheDocument()
+        },
+      )
 
       it.each<readonly [string, string]>([
         ['利用規約', '#/legal/terms'],
         ['プライバシーポリシー', '#/legal/privacy'],
-      ])('右のパネルの「%s」を押すと、アドレスの # 以降が「%s」になる', async (linkName, hash) => {
+      ])(
+        '「このアプリについて」ダイアログの「%s」を押すと、アドレスの # 以降が「%s」になる',
+        async (linkName, hash) => {
+          const app = await startApp()
+
+          await openLegalDialog(app, linkName)
+
+          expect(window.location.hash).toBe(hash)
+        },
+      )
+
+      it('「このアプリについて」ダイアログの「利用規約」を押すと、「このアプリについて」ダイアログは表示されなくなる', async () => {
         const app = await startApp()
 
-        await openLegalDialog(app, linkName)
+        await openLegalDialog(app, '利用規約')
 
-        expect(window.location.hash).toBe(hash)
+        expect(app.dialog('このアプリについて')).not.toBeInTheDocument()
       })
 
-      it('右のパネルの「利用規約」を押すと、エディタ画面は消えず、右のパネルの「ファイル」ボタンと、タイムラインの代替コンテンツの「スクロール位置 1 小節目 1 拍目」がダイアログの下に表示されたままになる', async () => {
+      it('「このアプリについて」ダイアログの「利用規約」を押すと、エディタ画面は消えず、右のパネルの「ファイル」ボタンと、タイムラインの代替コンテンツの「スクロール位置 1 小節目 1 拍目」がダイアログの下に表示されたままになる', async () => {
         const app = await startWithLegalDialog('利用規約')
 
         expectEditorBehindDialog(app)
       })
-    })
 
-    describe('異常系', () => {
       it('「利用規約」ダイアログが開いているとき、ダイアログの下の右のパネルの「ファイル」ボタンを押しても、操作は届かず、メニューは開かない', async () => {
         const app = await startWithLegalDialog('利用規約')
 
@@ -869,6 +921,27 @@ describe('[法務のダイアログ] 利用規約・プライバシーポリシ�
         expect(app.button('ログアウト')).toBeInTheDocument()
       })
 
+      it('クラウドの設定があり、ログインしていないとき、「ファイル」メニューの「クラウドに保存」を押して画面の下のメッセージに「クラウドを使うには、ログインしてください」が表示されたあと、「ログイン」ダイアログで「Google でログイン」を押して、ログインが成功すると、画面の下のメッセージに「クラウドを使うには、ログインしてください」が表示されなくなる', async () => {
+        const app = await startApp({ cloud: { configured: true } })
+        await app.fileMenu.choose('クラウドに保存')
+        expect(app.notice('クラウドを使うには、ログインしてください')).toBeInTheDocument()
+        await app.click(app.button('ログイン'))
+
+        await pressGoogleSignIn(app)
+
+        expect(app.notice('クラウドを使うには、ログインしてください')).not.toBeInTheDocument()
+      })
+
+      it('クラウドの設定があり、Google のログインが終わっていないとき、「ログイン」ダイアログの「Google でログイン」を続けて 2 回押しても、Google のログインのウィンドウは 1 回だけ開く', async () => {
+        const app = await startWithLoginDialog()
+        const openedSignInWindows = app.cloudFaults.pendSignIn()
+
+        await pressGoogleSignIn(app)
+        await pressGoogleSignIn(app)
+
+        expect(openedSignInWindows).toHaveLength(1)
+      })
+
       it('「ログイン」ダイアログで「Google でログイン」を押して、Google のログインが終わっていないとき、ダイアログの「Google でログイン」が押せなくなる', async () => {
         const app = await startWithLoginDialog()
         expect(app.text('ログイン中です。開いた Google のウィンドウで操作してください。')).not.toBeInTheDocument()
@@ -888,9 +961,7 @@ describe('[法務のダイアログ] 利用規約・プライバシーポリシ�
 
         expect(app.text('ログイン中です。開いた Google のウィンドウで操作してください。')).toBeInTheDocument()
       })
-    })
 
-    describe('異常系', () => {
       it('「ログイン」ダイアログで「Google でログイン」を押したあと、利用者が Google のウィンドウを閉じてログインが終わらなかったとき、ダイアログの「Google でログイン」がもう一度押せる状態に戻る', async () => {
         const app = await startWithLoginDialog()
         const pendingSignIns = await pressGoogleSignInKeepingPending(app)
@@ -910,7 +981,9 @@ describe('[法務のダイアログ] 利用規約・プライバシーポリシ�
 
         expect(app.alertTexts()).not.toContainEqual(expect.stringContaining(LOGIN_FAILURE_PREFIX))
       })
+    })
 
+    describe('異常系', () => {
       it('「ログイン」ダイアログで「Google でログイン」を押して、想定外の原因でログインが失敗し、エラーの文言が「テスト用の失敗」のとき、ダイアログに「ログインできませんでした: テスト用の失敗」が表示される', async () => {
         const app = await startWithLoginDialog()
         app.cloudFaults.failSignIn(new Error('テスト用の失敗'))
@@ -934,7 +1007,7 @@ describe('[法務のダイアログ] 利用規約・プライバシーポリシ�
   })
 
   describe('URL の # 以降に /login を直接入力しての起動', () => {
-    describe('異常系', () => {
+    describe('正常系', () => {
       it('クラウドの設定がないとき、URL の # 以降に /login を入力して起動すると、エディタ画面の上に「ログイン」ダイアログが開き、ダイアログに「クラウド保存は設定されていないため、ログインできません。」が表示される', async () => {
         const app = await startApp({ route: '/login' })
 
@@ -999,7 +1072,7 @@ describe('[クラウドのエラーの文言] ログインの失敗の原因別�
 })
 
 describe('[ダイアログ] ダイアログの背後の画面', () => {
-  describe('異常系', () => {
+  describe('正常系', () => {
     it('タップノーツを 1 小節目 1 拍目の 1/2 拍後・レーン 2 に置いてあり、「MIDI を取り込む」ダイアログが開いているとき、タイムラインの 1 小節目 2 拍目・レーン 3 をクリックしても、背後のタイムラインは効かず、ノーツは「タップノーツ 1 小節目 1 拍目の 1/2 拍後 レーン 2」の 1 つのままになる', async () => {
       const app = await startWithGrid16AndTapPlacedAndMidiDialogOpen()
 
@@ -1030,9 +1103,7 @@ describe('[ダイアログ] ダイアログの閉じ方', () => {
 
       expect(app.dialog('プロジェクト情報')).toBeInTheDocument()
     })
-  })
 
-  describe('異常系', () => {
     it.each(DIALOG_CLOSE_OPERATIONS)(
       'プロジェクトと譜面の書き込みが終わらず「保存中です」と表示されているとき、「クラウドに保存」ダイアログで%s、「クラウドに保存」ダイアログは表示されたままになる',
       async (_operation, close) => {

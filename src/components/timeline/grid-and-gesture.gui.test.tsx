@@ -134,9 +134,7 @@ describe('[フリックノーツ] フリックの解除', () => {
 
         expect(app.timeline.notes()).toEqual(['タップノーツ 1 小節目 1 拍目の 1/2 拍後 レーン 2'])
       })
-    })
 
-    describe('異常系', () => {
       describe('1 小節目 1 拍目の 1/2 拍後・レーン 2 のタップノーツだけがあるとき', () => {
         it('そのタップノーツを横へ 0 レーン、下へ 0.5 マス動かして離すと、画面の下のメッセージに「この点にはフリックがないため、解除できません」が表示される', async () => {
           const app = await startAppWithNoteAt480Lane2(tapNote)

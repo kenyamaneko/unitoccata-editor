@@ -4,16 +4,16 @@ UniToccata の譜面 (タップ・フリック・ロング) を編集する Web 
 
 ## 技術スタック
 
-| レイヤー           | 技術                                                       |
-| ------------------ | ---------------------------------------------------------- |
-| フロントエンド     | React, TypeScript, Vite, Tailwind CSS, zustand             |
-| 描画               | Canvas                                                     |
-| 音声               | Web Audio API, signalsmith-stretch                         |
-| MIDI               | midi-file                                                  |
-| クラウド保存・認証 | Firebase Authentication, Cloud Storage                     |
-| ホスティング       | Firebase Hosting                                           |
-| CI/CD              | GitHub Actions                                             |
-| テスト             | Vitest, Testing Library, msw, @firebase/rules-unit-testing |
+| レイヤー           | 技術                                                                   |
+| ------------------ | ---------------------------------------------------------------------- |
+| フロントエンド     | React, TypeScript, Vite, Tailwind CSS, zustand                         |
+| 描画               | Canvas                                                                 |
+| 音声               | Web Audio API, signalsmith-stretch                                     |
+| MIDI               | midi-file                                                              |
+| クラウド保存・認証 | Firebase Authentication, Cloud Storage                                 |
+| ホスティング       | Firebase Hosting                                                       |
+| CI/CD              | GitHub Actions                                                         |
+| テスト             | Vitest, Testing Library, msw, @firebase/rules-unit-testing, Playwright |
 
 ## ドキュメント
 
@@ -36,6 +36,8 @@ UniToccata の譜面 (タップ・フリック・ロング) を編集する Web 
 │   ├── state/        # 編集の状態とプレビューの再生状態 (zustand)
 │   ├── test/         # 複数の機能のテストが共有する部品 (画面の起動、Firebase と音声の代用、テストデータ)
 │   └── utils/        # 失敗の説明文、ログ出力、ファイルの読み書き、網羅性の検査
+├── e2e/              # E2E テスト (Playwright。エミュレータに接続して、ログイン・書き出し・クラウド保存などを確かめる)
+├── e2e-smoke/        # デプロイ後のスモークテスト (デプロイ済みの URL を開いて、エディタ画面とバージョンを確かめる)
 ├── docs/             # 用語集
 ├── rules/            # リポ固有のルール
 ├── scripts/          # テスト名からテスト観点カタログを生成するスクリプト

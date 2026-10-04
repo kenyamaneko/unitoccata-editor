@@ -7,7 +7,7 @@ import { useEditorStore } from '../../state/editorStore.ts'
 import { LoginDialog } from '../auth/LoginDialog.tsx'
 import { CloudOpenDialog } from '../cloud/CloudOpenDialog.tsx'
 import { CloudSaveDialog } from '../cloud/CloudSaveDialog.tsx'
-import { BookIcon, InfoIcon, SettingsIcon } from '../common/icons.tsx'
+import { AboutIcon, BookIcon, InfoIcon, SettingsIcon } from '../common/icons.tsx'
 import { Button } from '../common/ui.tsx'
 import { PrivacyDialog } from '../legal/PrivacyDialog.tsx'
 import { TermsDialog } from '../legal/TermsDialog.tsx'
@@ -15,6 +15,7 @@ import { MidiImportDialog } from '../midi/MidiImportDialog.tsx'
 import { PreviewControls } from '../preview/PreviewControls.tsx'
 import { ChartSettingsDialog } from '../settings/ChartSettingsDialog.tsx'
 import { ProjectInfoDialog } from '../settings/ProjectInfoDialog.tsx'
+import { AboutDialog } from './AboutDialog.tsx'
 import { AccountButton } from './AccountButton.tsx'
 import { EditingControls } from './EditingControls.tsx'
 import { FileControls } from './FileControls.tsx'
@@ -34,6 +35,7 @@ export function Toolbar({ children }: { children: ReactNode }) {
   const [isProjectInfoOpen, setProjectInfoOpen] = useState(false)
   const [isChartSettingsOpen, setChartSettingsOpen] = useState(false)
   const [isHelpOpen, setHelpOpen] = useState(false)
+  const [isAboutOpen, setAboutOpen] = useState(false)
   const route = useHashRoute()
   const isLegalDialogOpen = route === '/login' || route === '/legal/terms' || route === '/legal/privacy'
   const cloudProjects = useMemo(() => (user === null ? null : createUserCloudProjects(user.uid)), [user])
@@ -43,6 +45,7 @@ export function Toolbar({ children }: { children: ReactNode }) {
     isProjectInfoOpen ||
     isChartSettingsOpen ||
     isHelpOpen ||
+    isAboutOpen ||
     isLegalDialogOpen
   const setDialogOpen = useEditorStore((state) => state.setDialogOpen)
 
@@ -95,16 +98,12 @@ export function Toolbar({ children }: { children: ReactNode }) {
       </header>
       <div className="relative flex min-h-0 flex-1" inert={isDialogOpen}>
         {children}
-        <aside className="relative z-20 flex min-h-0 w-52 shrink-0 flex-col overflow-y-auto gap-3 border-l border-slate-800 bg-slate-900/80 p-3">
+        <aside className="relative z-20 flex min-h-0 w-56 shrink-0 flex-col overflow-y-auto gap-3 [&>*]:shrink-0 border-l border-slate-800 bg-slate-900/80 p-3">
           {store.mode === 'editor' ? editorControls : <PreviewControls />}
-          <nav className="mt-auto flex flex-col gap-1 border-t border-slate-800 pt-3 text-xs text-muted">
-            <a className="hover:text-slate-100" href="#/legal/terms">
-              利用規約
-            </a>
-            <a className="hover:text-slate-100" href="#/legal/privacy">
-              プライバシーポリシー
-            </a>
-          </nav>
+          <Button onClick={() => setAboutOpen(true)}>
+            <AboutIcon />
+            このアプリについて
+          </Button>
         </aside>
       </div>
       {cloudProjects !== null && dialog === 'save' && (
@@ -116,6 +115,7 @@ export function Toolbar({ children }: { children: ReactNode }) {
       {isProjectInfoOpen && <ProjectInfoDialog onClose={() => setProjectInfoOpen(false)} />}
       {isChartSettingsOpen && <ChartSettingsDialog onClose={() => setChartSettingsOpen(false)} />}
       {isHelpOpen && <HelpDialog onClose={() => setHelpOpen(false)} />}
+      {isAboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
       {route === '/login' && <LoginDialog />}
       {route === '/legal/terms' && <TermsDialog />}
       {route === '/legal/privacy' && <PrivacyDialog />}

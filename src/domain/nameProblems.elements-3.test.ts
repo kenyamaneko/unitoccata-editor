@@ -9,9 +9,7 @@ describe('[曲名・譜面名の入力] 入力の検証', () => {
     ])('曲名が $given のとき、メッセージは、null になる', ({ name }) => {
       expect(findNameMessage('曲名', name)).toBeNull()
     })
-  })
 
-  describe('異常系', () => {
     it.each([
       { given: '空文字', name: '' },
       { given: '空白だけ', name: '   ' },

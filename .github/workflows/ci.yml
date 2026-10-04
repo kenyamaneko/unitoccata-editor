@@ -113,19 +113,53 @@ jobs:
         run: |
           pip install pytest
           python -m pytest scripts
-      - name: テスト観点カタログを生成する
-        run: |
-          python scripts/generate_behavior_catalog.py \
-            --format markdown \
-            --commit "${GITHUB_SHA}" \
-            --section "外から見た振る舞い:全テスト:test-results/vitest-junit.xml" \
-            > test-results/behavior-catalog.md
-      - name: テスト観点カタログを保存する
+      # 同一 run 内でテスト観点カタログを組むためだけに使うので保持は最短にする。
+      - name: JUnit XML を保存する
         uses: actions/upload-artifact@v7
         with:
-          name: behavior-catalog
-          path: test-results/behavior-catalog.md
-          retention-days: 30
+          name: junit-vitest
+          path: test-results/vitest-junit.xml
+          retention-days: 1
+
+  e2e:
+    name: e2e
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubicloud-standard-2
+    timeout-minutes: 20
+    steps:
+      - name: チェックアウト
+        uses: actions/checkout@v7
+      - name: Node.js を用意する
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: package.json
+          cache: npm
+      - name: Java を用意する
+        uses: actions/setup-java@v5.6.0
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: 依存関係をインストールする
+        run: npm ci
+      - name: Playwright のブラウザを入れる
+        run: npx playwright install --with-deps chromium
+      - name: E2E テストを実行する
+        run: npm run test:e2e
+      # 同一 run 内でテスト観点カタログを組むためだけに使うので保持は最短にする。
+      - name: JUnit XML を保存する
+        uses: actions/upload-artifact@v7
+        with:
+          name: junit-e2e
+          path: test-results/e2e-junit.xml
+          retention-days: 1
+      - name: E2E テストの失敗の記録を保存する
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-failure
+          path: test-results
+          retention-days: 7
 
   build:
     name: build

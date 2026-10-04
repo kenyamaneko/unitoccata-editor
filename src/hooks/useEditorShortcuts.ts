@@ -49,6 +49,7 @@ const PLAIN_KEY_ACTIONS: ReadonlyMap<string, KeyAction> = new Map<string, KeyAct
   ['ArrowLeft', () => useEditorStore.getState().setFlickAtHover('left')],
   ['ArrowRight', () => useEditorStore.getState().setFlickAtHover('right')],
   ['ArrowDown', () => useEditorStore.getState().clearFlickAtHover()],
+  ['Escape', () => useEditorStore.getState().cancelPasteTargeting()],
 ])
 
 function runKeyAction(actions: ReadonlyMap<string, KeyAction>, key: string, event: KeyboardEvent): boolean {

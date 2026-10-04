@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "offsetMs": 250,
+  "laneCount": 6,
+  "tempo": [{ "tick": 0, "bpm": 150 }],
+  "meter": [{ "tick": 0, "num": 4, "den": 4 }],
+  "notes": [
+    { "type": "tap", "tick": 480, "lane": 1 },
+    { "type": "flick", "tick": 960, "lane": 5, "dir": "right" },
+    {
+      "type": "long",
+      "tick": 1440,
+      "lane": 0,
+      "path": [
+        { "tick": 1920, "lane": 0 },
+        { "tick": 2400, "lane": 2 }
+      ],
+      "end": { "flick": "up" }
+    }
+  ]
+}

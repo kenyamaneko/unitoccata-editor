@@ -9,6 +9,7 @@ import {
   type VelocityRange,
 } from '../../domain/midiImport.ts'
 import { formatPitchName, parsePitchName } from '../../domain/pitch.ts'
+import type { ProjectInfo } from '../../domain/types.ts'
 import { describePosition } from '../../domain/positionText.ts'
 import { DIRECTION_LABELS, describeEnd } from '../../domain/noteDescription.ts'
 import { describeFailure } from '../../utils/describeFailure.ts'
@@ -38,6 +39,20 @@ const WARNING_LABELS: Record<MidiImportResult['warnings'][number]['reason'], str
   'velocity-out-of-range': 'ベロシティが範囲外',
   'zero-length-long': '長さが 0 のロングノーツ',
   'duplicate-position': '位置の重複',
+  'pitch-not-assigned': 'レーンに割り当てていない音程',
+}
+
+/** 警告の項目の文言。音程ごとにまとめた警告は、位置を持たないので、音程と個数を書く。 */
+function describeWarning(warning: MidiImportResult['warnings'][number], projectInfo: ProjectInfo): string {
+  if (warning.reason === 'pitch-not-assigned') {
+    return `音程 ${formatPitchName(warning.pitch)}: ${WARNING_LABELS[warning.reason]} (${warning.count} 個)`
+  }
+  return `${describePosition(projectInfo, warning.tick)} レーン ${warning.lane}: ${WARNING_LABELS[warning.reason]}`
+}
+
+/** 警告に数えられたノートの個数。 */
+function countWarnedNotes(warnings: MidiImportResult['warnings']): number {
+  return warnings.reduce((total, warning) => total + (warning.reason === 'pitch-not-assigned' ? warning.count : 1), 0)
 }
 
 interface VelocityRow {
@@ -69,6 +84,14 @@ export function MidiImportDialog({ song, onClose }: { song: MidiSong; onClose: (
   const [result, setResult] = useState<MidiImportResult | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const hasNotes = store.chart.notes.length > 0
+  const [importsTempo, setImportsTempo] = useState(!hasNotes)
+  const [importsMeter, setImportsMeter] = useState(!hasNotes)
+
+  const effectiveProjectInfo: ProjectInfo = {
+    ...store.projectInfo,
+    tempo: importsTempo && result !== null ? result.projectInfo.tempo : store.projectInfo.tempo,
+    meter: importsMeter && result !== null ? result.projectInfo.meter : store.projectInfo.meter,
+  }
 
   const discardResult = (): void => {
     setMessage(null)
@@ -119,7 +142,10 @@ export function MidiImportDialog({ song, onClose }: { song: MidiSong; onClose: (
     if (result === null) {
       return
     }
-    store.applyMidiImport(result.chart, hasNotes ? null : result.projectInfo)
+    store.applyMidiImport(result.chart, {
+      tempo: importsTempo ? result.projectInfo.tempo : null,
+      meter: importsMeter ? result.projectInfo.meter : null,
+    })
     onClose()
   }
 
@@ -165,9 +191,18 @@ export function MidiImportDialog({ song, onClose }: { song: MidiSong; onClose: (
           ))}
         </div>
       </Field>
-      {hasNotes && (
-        <p className="text-xs text-amber-200">譜面にノーツがあるため、MIDI のテンポと拍子は取り込みません。</p>
-      )}
+      <Field label="MIDI のテンポと拍子">
+        <div className="space-y-1.5">
+          <label className="flex items-center gap-2 text-sm text-slate-300">
+            <input type="checkbox" checked={importsTempo} onChange={(event) => setImportsTempo(event.target.checked)} />
+            テンポを取り込む
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-300">
+            <input type="checkbox" checked={importsMeter} onChange={(event) => setImportsMeter(event.target.checked)} />
+            拍子を取り込む
+          </label>
+        </div>
+      </Field>
       <div className="flex gap-2">
         <Button onClick={confirmImport}>確認する</Button>
         <Button tone="accent" disabled={result === null} onClick={apply}>
@@ -181,12 +216,10 @@ export function MidiImportDialog({ song, onClose }: { song: MidiSong; onClose: (
       )}
       {result !== null && (
         <div role="status" className="space-y-1 text-sm text-slate-300">
-          <p>{`取り込むノーツ ${result.chart.notes.length} 個、取り込めないノート ${result.warnings.length} 個`}</p>
+          <p>{`取り込むノーツ ${result.chart.notes.length} 個、取り込めないノート ${countWarnedNotes(result.warnings)} 個`}</p>
           <ul className="max-h-32 overflow-y-auto text-xs text-muted">
             {result.warnings.map((warning, index) => (
-              <li key={index}>
-                {`${describePosition(hasNotes ? store.projectInfo : result.projectInfo, warning.tick)} レーン ${warning.lane}: ${WARNING_LABELS[warning.reason]}`}
-              </li>
+              <li key={index}>{describeWarning(warning, effectiveProjectInfo)}</li>
             ))}
           </ul>
         </div>
