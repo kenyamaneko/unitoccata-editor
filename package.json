@@ -13,9 +13,11 @@
     "test:logic": "vitest run --project logic",
     "test:gui": "vitest run --project gui",
     "test:integration": "firebase emulators:exec --only auth,storage,firestore --project demo-unitoccata-editor \"vitest run --project integration --project integration-gui\"",
+    "test:e2e": "firebase emulators:exec --only auth,storage,firestore --project demo-unitoccata-editor \"playwright test\"",
+    "test:smoke": "playwright test --config playwright.smoke.config.ts",
     "preview": "vite preview",
-    "format": "prettier --write src",
-    "format:check": "prettier --check src"
+    "format": "prettier --write src e2e e2e-smoke *.config.ts",
+    "format:check": "prettier --check src e2e e2e-smoke *.config.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -29,6 +31,7 @@
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.2",
+    "@playwright/test": "^1.63.0",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",

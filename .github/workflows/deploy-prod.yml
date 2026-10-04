@@ -1,17 +1,69 @@
 name: Deploy to Prod
 
+# バージョンの桁は後方互換や変化の大きさの判断であり変更内容から導けないため、人が選んで実行する。
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump level"
+        required: true
+        default: "patch"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
 concurrency:
   group: deploy-prod-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  tag-version:
+    name: バージョンのタグ付け
+    # main 以外のコミットにタグを打って prod に出さないため、main から実行したときだけ進める。
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubicloud-standard-2
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: チェックアウト
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: 次のタグを決める
+        id: tag
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          latest=$(git tag --list "v*" --sort=-v:refname | head -n1)
+          if [ -z "${latest}" ]; then
+            next="v0.1.0"
+          else
+            IFS='.' read -r major minor patch <<< "${latest#v}"
+            case "${BUMP}" in
+              patch) patch=$((patch + 1)) ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+              *) echo "unknown bump: ${BUMP}" >&2; exit 1 ;;
+            esac
+            next="v${major}.${minor}.${patch}"
+          fi
+          echo "tag=${next}" >> "$GITHUB_OUTPUT"
+          echo "Next tag: ${next}"
+      - name: タグを打って push する
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "${TAG}"
+          git push origin "${TAG}"
+
   determine-version:
     name: バージョンの判定
+    needs: tag-version
     runs-on: ubicloud-standard-2
     timeout-minutes: 5
     outputs:
@@ -21,13 +73,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: コミットが main にあることを確認する
-        run: |
-          git fetch origin main
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
-            echo "::error::commit ${GITHUB_SHA} is not on main; refusing to deploy to prod"
-            exit 1
-          fi
       - name: Git タグからバージョンを求める
         id: version
         run: |
@@ -66,6 +111,32 @@ jobs:
           VITE_FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
           VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.FIREBASE_STORAGE_BUCKET }}
           VITE_FIREBASE_APP_ID: ${{ vars.FIREBASE_APP_ID }}
+          VITE_BUILD_VERSION: ${{ needs.determine-version.outputs.version }}
         run: npm run build
       - name: Firebase にデプロイする
         run: npx firebase-tools deploy --only hosting --project ${{ vars.FIREBASE_PROJECT_ID }}
+
+  smoke:
+    name: デプロイ後のスモークテスト (prod)
+    needs: deploy
+    runs-on: ubicloud-standard-2
+    timeout-minutes: 10
+    environment: prod
+    steps:
+      - name: チェックアウト
+        uses: actions/checkout@v7
+      - name: Node.js を用意する
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: package.json
+          cache: npm
+      - name: 依存関係をインストールする
+        run: npm ci
+      - name: Playwright のブラウザを入れる
+        run: npx playwright install --with-deps chromium
+      - name: スモークテストを実行する
+        env:
+          SMOKE_BASE_URL: https://${{ vars.FIREBASE_PROJECT_ID }}.web.app
+          SMOKE_FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          SMOKE_FIREBASE_STORAGE_BUCKET: ${{ vars.FIREBASE_STORAGE_BUCKET }}
+        run: npm run test:smoke
