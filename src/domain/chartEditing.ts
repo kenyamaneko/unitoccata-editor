@@ -32,7 +32,7 @@ export type EditFailureReason =
 export type EditResult =
   { readonly ok: true; readonly chart: Chart } | { readonly ok: false; readonly reason: EditFailureReason }
 
-/** コピーしたノーツ。位置は、コピーした全ての点の最小 tick と最小 lane を原点とした相対値。 */
+/** コピーしたノーツ。位置は、コピーした全ての点のうち tick が最小の点を原点とした相対値。tick が最小の点が複数あるときは、そのうち一番左のレーンの点を原点とする。 */
 export interface ClipboardData {
   readonly notes: readonly NoteBody[]
 }
@@ -272,7 +272,7 @@ export function createClipboard(chart: Chart, noteIds: readonly string[]): Clipb
     return { notes: [] }
   }
   const originTick = Math.min(...points.map((point) => point.tick))
-  const originLane = Math.min(...points.map((point) => point.lane))
+  const originLane = Math.min(...points.filter((point) => point.tick === originTick).map((point) => point.lane))
   return {
     notes: selected.map((note) =>
       mapPoints(stripId(note), (point) => ({ tick: point.tick - originTick, lane: point.lane - originLane })),
@@ -290,6 +290,17 @@ export function deleteNotes(chart: Chart, noteIds: readonly string[], laneCount:
   )
 }
 
+/** クリップボードのノーツを、原点を指定の位置に合わせた位置に置いたノーツにする。id は createId で採番する。 */
+export function placeClipboardNotes(clipboard: ClipboardData, origin: ChartPoint, createId: () => string): Note[] {
+  return clipboard.notes.map(
+    (body) =>
+      ({
+        ...mapPoints(body, (point) => ({ tick: point.tick + origin.tick, lane: point.lane + origin.lane })),
+        id: createId(),
+      }) as Note,
+  )
+}
+
 /** クリップボードのノーツを、原点を指定の位置に合わせて貼り付ける。id は createId で採番する。 */
 export function pasteClipboard(
   chart: Chart,
@@ -298,12 +309,5 @@ export function pasteClipboard(
   createId: () => string,
   laneCount: number,
 ): EditResult {
-  const pasted = clipboard.notes.map(
-    (body) =>
-      ({
-        ...mapPoints(body, (point) => ({ tick: point.tick + origin.tick, lane: point.lane + origin.lane })),
-        id: createId(),
-      }) as Note,
-  )
-  return validateAndBuild([...chart.notes, ...pasted], laneCount, chart)
+  return validateAndBuild([...chart.notes, ...placeClipboardNotes(clipboard, origin, createId)], laneCount, chart)
 }

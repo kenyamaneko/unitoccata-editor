@@ -7,15 +7,19 @@ import {
   startWithMaxNotes,
 } from '../../test/editor-operations-1.helpers.ts'
 import {
+  choosePastePosition,
   pasteAt,
   pasteWithButtonAt,
   selectBothTaps,
   selectTap480Lane1,
+  startWithBothTapsCopied,
   startWithLongNoteEndingInRightFlick,
   startWithLongNoteWithoutEndFlick,
   startWithTapAndLeftFlick,
   startWithTapAt480Lane0,
   startWithTapAt480Lane0AndLane4,
+  startWithTapsAt480Lane1AndLane3AndAt720Lane0,
+  startWithTapsAt480Lane3AndAt720Lane1,
   startWithTapsAtBeat2Lane0AndBeat4Lane1,
   startWithTwoPlacedTaps,
   startWithTwoTaps,
@@ -40,6 +44,19 @@ const NO_ROOM_TO_MOVE_NOTICE = '先頭より前には動かせません'
 const pressCtrlA = (app: AppDriver): Promise<void> => app.press('Ctrl+A')
 const pressCmdA = (app: AppDriver): Promise<void> => app.press('Cmd+A')
 const clickSelectAllButton = (app: AppDriver): Promise<void> => app.click(app.button('全選択'))
+
+const TWO_TAPS_WITH_TAP_PLACED_AT_BEAT_3_LANE_0 = [
+  'タップノーツ 1 小節目 1 拍目の 1/2 拍後 レーン 1',
+  'タップノーツ 1 小節目 1 拍目の 3/4 拍後 レーン 2',
+  'タップノーツ 1 小節目 3 拍目 レーン 0',
+]
+
+const cancelByEscapeKey = (app: AppDriver): Promise<void> => app.press('Escape')
+const cancelByPressingPasteAgain = (app: AppDriver): Promise<void> => app.click(app.button('貼り付け'))
+const cancelByVisitingPreview = async (app: AppDriver): Promise<void> => {
+  await app.selectTab('プレビュー')
+  await app.selectTab('エディタ')
+}
 
 describe('[範囲選択] 選択したノーツ', () => {
   describe('正常系', () => {
@@ -71,6 +88,16 @@ describe('[範囲選択] 選択したノーツ', () => {
             ])
           })
 
+          it('ノーツを Ctrl+C でコピーしたあと、Ctrl+V を押しても、「貼り付け」ボタンは押された状態にならない', async () => {
+            const app = await startWithTwoTaps()
+            await selectBothTaps(app)
+            await app.press('Ctrl+C')
+
+            await pasteAt(app, 'Ctrl+V', 1920, 0)
+
+            expect(app.button('貼り付け')).toHaveAttribute('aria-pressed', 'false')
+          })
+
           it('レーン数が 5 のとき、2 つのタップノーツを選択して Ctrl+C でコピーし、1 小節目 3 拍目・レーン 3 にマウスを置いて Ctrl+V を押すと、最後のレーン 4 に収まり、譜面のノーツの代替コンテンツは、元の 2 項目と貼り付けた「タップノーツ 1 小節目 3 拍目 レーン 3」「タップノーツ 1 小節目 3 拍目の 1/4 拍後 レーン 4」の 4 項目になる', async () => {
             const app = await startWithTwoTaps()
             await selectBothTaps(app)
@@ -85,82 +112,7 @@ describe('[範囲選択] 選択したノーツ', () => {
               'タップノーツ 1 小節目 3 拍目の 1/4 拍後 レーン 4',
             ])
           })
-        })
 
-        describe('右のパネルの「コピー」「切り取り」「貼り付け」ボタンの押下', () => {
-          it('1 小節目 1 拍目の 1/2 拍後・レーン 1 のタップノーツだけを選択して「コピー」ボタンを押し、1 小節目 3 拍目・レーン 0 にマウスを置いて「貼り付け」ボタンを押すと、譜面のノーツの代替コンテンツは、元の 2 項目と貼り付けた「タップノーツ 1 小節目 3 拍目 レーン 0」の 3 項目になる', async () => {
-            const app = await startWithTwoTaps()
-            await selectTap480Lane1(app)
-            await app.click(app.button('コピー'))
-
-            await pasteWithButtonAt(app, 1920, 0)
-
-            expect(app.timeline.notes()).toEqual([
-              'タップノーツ 1 小節目 1 拍目の 1/2 拍後 レーン 1',
-              'タップノーツ 1 小節目 1 拍目の 3/4 拍後 レーン 2',
-              'タップノーツ 1 小節目 3 拍目 レーン 0',
-            ])
-          })
-
-          it('1 小節目 1 拍目の 1/2 拍後・レーン 1 のタップノーツだけを選択して「切り取り」ボタンを押すと、譜面のノーツの代替コンテンツから「タップノーツ 1 小節目 1 拍目の 1/2 拍後 レーン 1」が消えて 1 項目になり、続けて 1 小節目 3 拍目・レーン 0 にマウスを置いて「貼り付け」ボタンを押すと、「タップノーツ 1 小節目 3 拍目 レーン 0」が加わって 2 項目になる', async () => {
-            const app = await startWithTwoTaps()
-            await selectTap480Lane1(app)
-
-            await app.click(app.button('切り取り'))
-
-            expect(app.timeline.notes()).toEqual(['タップノーツ 1 小節目 1 拍目の 3/4 拍後 レーン 2'])
-
-            await pasteWithButtonAt(app, 1920, 0)
-
-            expect(app.timeline.notes()).toEqual([
-              'タップノーツ 1 小節目 1 拍目の 3/4 拍後 レーン 2',
-              'タップノーツ 1 小節目 3 拍目 レーン 0',
-            ])
-          })
-        })
-
-        describe('Ctrl+X の押下', () => {
-          it('1 小節目 1 拍目の 1/2 拍後・レーン 1 のタップノーツだけを選択して Ctrl+X を押すと、譜面のノーツの代替コンテンツから「タップノーツ 1 小節目 1 拍目の 1/2 拍後 レーン 1」が消えて 1 項目になり、続けて 1 小節目 3 拍目・レーン 0 にマウスを置いて Ctrl+V を押すと、「タップノーツ 1 小節目 3 拍目 レーン 0」が加わって 2 項目になる', async () => {
-            const app = await startWithTwoTaps()
-            await selectTap480Lane1(app)
-
-            await app.press('Ctrl+X')
-
-            expect(app.timeline.notes()).toEqual(['タップノーツ 1 小節目 1 拍目の 3/4 拍後 レーン 2'])
-
-            await pasteAt(app, 'Ctrl+V', 1920, 0)
-
-            expect(app.timeline.notes()).toEqual([
-              'タップノーツ 1 小節目 1 拍目の 3/4 拍後 レーン 2',
-              'タップノーツ 1 小節目 3 拍目 レーン 0',
-            ])
-          })
-        })
-
-        it.each([
-          { copy: 'Ctrl+C', paste: 'Ctrl+V' },
-          { copy: 'Cmd+C', paste: 'Cmd+V' },
-        ] as const)(
-          '2 つのタップノーツを選択して $copy でコピーし、1 小節目 3 拍目・レーン 0 にマウスを置いて $paste を押すと、譜面のノーツの代替コンテンツは、元の 2 項目と貼り付けた「タップノーツ 1 小節目 3 拍目 レーン 0」「タップノーツ 1 小節目 3 拍目の 1/4 拍後 レーン 1」の 4 項目になる',
-          async ({ copy, paste }) => {
-            const app = await startWithTwoTaps()
-            await selectBothTaps(app)
-            await app.press(copy)
-
-            await pasteAt(app, paste, 1920, 0)
-
-            expect(app.timeline.notes()).toEqual([
-              'タップノーツ 1 小節目 1 拍目の 1/2 拍後 レーン 1',
-              'タップノーツ 1 小節目 1 拍目の 3/4 拍後 レーン 2',
-              'タップノーツ 1 小節目 3 拍目 レーン 0',
-              'タップノーツ 1 小節目 3 拍目の 1/4 拍後 レーン 1',
-            ])
-          },
-        )
-      })
-
-      describe('異常系', () => {
-        describe('Ctrl+V の押下', () => {
           it('1 小節目 1 拍目の 1/2 拍後・レーン 1 のタップノーツだけを選択して Ctrl+C でコピーし、ノーツのある 1 小節目 1 拍目の 3/4 拍後・レーン 2 にマウスを置いて Ctrl+V を押すと、画面の下のメッセージに「同じ位置にノーツがあります」が表示される', async () => {
             const app = await startWithTwoTaps()
             await selectTap480Lane1(app)
@@ -248,12 +200,222 @@ describe('[範囲選択] 選択したノーツ', () => {
           })
         })
 
-        it.each(['コピー', '切り取り', '貼り付け'])(
-          'ノーツを選択もコピーもしていないとき、右のパネルの「%s」ボタンは押せない状態になる',
-          async (name) => {
+        describe('右のパネルの「コピー」「切り取り」「貼り付け」ボタンの押下', () => {
+          it('1 小節目 1 拍目の 1/2 拍後・レーン 1 のタップノーツだけを選択して「コピー」ボタンを押し、「貼り付け」ボタンを押してから 1 小節目 3 拍目・レーン 0 をクリックすると、譜面のノーツの代替コンテンツは、元の 2 項目と貼り付けた「タップノーツ 1 小節目 3 拍目 レーン 0」の 3 項目になる', async () => {
             const app = await startWithTwoTaps()
+            await selectTap480Lane1(app)
+            await app.click(app.button('コピー'))
 
-            expect(app.button(name)).toBeDisabled()
+            await pasteWithButtonAt(app, 1920, 0)
+
+            expect(app.timeline.notes()).toEqual([
+              'タップノーツ 1 小節目 1 拍目の 1/2 拍後 レーン 1',
+              'タップノーツ 1 小節目 1 拍目の 3/4 拍後 レーン 2',
+              'タップノーツ 1 小節目 3 拍目 レーン 0',
+            ])
+          })
+
+          it('1 小節目 1 拍目の 1/2 拍後・レーン 1 のタップノーツだけを選択して「切り取り」ボタンを押すと、譜面のノーツの代替コンテンツから「タップノーツ 1 小節目 1 拍目の 1/2 拍後 レーン 1」が消えて 1 項目になり、続けて「貼り付け」ボタンを押してから 1 小節目 3 拍目・レーン 0 をクリックすると、「タップノーツ 1 小節目 3 拍目 レーン 0」が加わって 2 項目になる', async () => {
+            const app = await startWithTwoTaps()
+            await selectTap480Lane1(app)
+
+            await app.click(app.button('切り取り'))
+
+            expect(app.timeline.notes()).toEqual(['タップノーツ 1 小節目 1 拍目の 3/4 拍後 レーン 2'])
+
+            await pasteWithButtonAt(app, 1920, 0)
+
+            expect(app.timeline.notes()).toEqual([
+              'タップノーツ 1 小節目 1 拍目の 3/4 拍後 レーン 2',
+              'タップノーツ 1 小節目 3 拍目 レーン 0',
+            ])
+          })
+        })
+
+        describe('右のパネルの「貼り付け」ボタンの押下', () => {
+          it('ノーツをコピーしたあと、「貼り付け」ボタンを押すと、「貼り付け」ボタンは押された状態になる', async () => {
+            const app = await startWithBothTapsCopied()
+
+            await app.click(app.button('貼り付け'))
+
+            expect(app.button('貼り付け')).toHaveAttribute('aria-pressed', 'true')
+          })
+
+          it('2 つのタップノーツをコピーしたあと、「貼り付け」ボタンを押してから 1 小節目 3 拍目・レーン 0 をクリックすると、譜面のノーツの代替コンテンツは、元の 2 項目と貼り付けた「タップノーツ 1 小節目 3 拍目 レーン 0」「タップノーツ 1 小節目 3 拍目の 1/4 拍後 レーン 1」の 4 項目になる', async () => {
+            const app = await startWithBothTapsCopied()
+
+            await pasteWithButtonAt(app, 1920, 0)
+
+            expect(app.timeline.notes()).toEqual([
+              'タップノーツ 1 小節目 1 拍目の 1/2 拍後 レーン 1',
+              'タップノーツ 1 小節目 1 拍目の 3/4 拍後 レーン 2',
+              'タップノーツ 1 小節目 3 拍目 レーン 0',
+              'タップノーツ 1 小節目 3 拍目の 1/4 拍後 レーン 1',
+            ])
+          })
+
+          it('ノーツをコピーしたあと、「貼り付け」ボタンを押してからタイムラインのマスをクリックすると、「貼り付け」ボタンは押された状態でなくなる', async () => {
+            const app = await startWithBothTapsCopied()
+
+            await pasteWithButtonAt(app, 1920, 0)
+
+            expect(app.button('貼り付け')).toHaveAttribute('aria-pressed', 'false')
+          })
+        })
+
+        describe('「貼り付け」ボタンで貼り付けたあとの左右反転', () => {
+          it('1 小節目 1 拍目の 1/2 拍後・レーン 1 のタップノーツをコピーし、1 小節目 3 拍目・レーン 0 に貼り付けたあと、右のパネルの「左右反転」ボタンを押すと、譜面のノーツの代替コンテンツは、元の 2 項目と「タップノーツ 1 小節目 3 拍目 レーン 4」の 3 項目になる', async () => {
+            const app = await startWithTwoTaps()
+            await selectTap480Lane1(app)
+            await app.click(app.button('コピー'))
+            await pasteWithButtonAt(app, 1920, 0)
+
+            await app.click(app.button('左右反転'))
+
+            expect(app.timeline.notes()).toEqual([
+              'タップノーツ 1 小節目 1 拍目の 1/2 拍後 レーン 1',
+              'タップノーツ 1 小節目 1 拍目の 3/4 拍後 レーン 2',
+              'タップノーツ 1 小節目 3 拍目 レーン 4',
+            ])
+          })
+        })
+
+        describe('ノーツをコピーして「貼り付け」ボタンを押したあと', () => {
+          it('エスケープキーを押すと、「貼り付け」ボタンは押された状態でなくなる', async () => {
+            const app = await startWithBothTapsCopied()
+            await choosePastePosition(app)
+
+            await cancelByEscapeKey(app)
+
+            expect(app.button('貼り付け')).toHaveAttribute('aria-pressed', 'false')
+          })
+
+          it('「貼り付け」ボタンをもう一度押すと、「貼り付け」ボタンは押された状態でなくなる', async () => {
+            const app = await startWithBothTapsCopied()
+            await choosePastePosition(app)
+
+            await cancelByPressingPasteAgain(app)
+
+            expect(app.button('貼り付け')).toHaveAttribute('aria-pressed', 'false')
+          })
+
+          it('「プレビュー」タブを選んでから「エディタ」タブを選ぶと、「貼り付け」ボタンは押された状態でなくなる', async () => {
+            const app = await startWithBothTapsCopied()
+            await choosePastePosition(app)
+
+            await cancelByVisitingPreview(app)
+
+            expect(app.button('貼り付け')).toHaveAttribute('aria-pressed', 'false')
+          })
+
+          it('2 つのタップノーツをコピーしているとき、エスケープキーを押してから 1 小節目 3 拍目・レーン 0 をクリックすると、貼り付けは行われず、譜面のノーツの代替コンテンツは、元の 2 項目と置いた「タップノーツ 1 小節目 3 拍目 レーン 0」の 3 項目になる', async () => {
+            const app = await startWithBothTapsCopied()
+            await choosePastePosition(app)
+            await cancelByEscapeKey(app)
+
+            await app.timeline.click(at(1920, 0))
+
+            expect(app.timeline.notes()).toEqual(TWO_TAPS_WITH_TAP_PLACED_AT_BEAT_3_LANE_0)
+          })
+
+          it('2 つのタップノーツをコピーしているとき、「貼り付け」ボタンをもう一度押してから 1 小節目 3 拍目・レーン 0 をクリックすると、貼り付けは行われず、譜面のノーツの代替コンテンツは、元の 2 項目と置いた「タップノーツ 1 小節目 3 拍目 レーン 0」の 3 項目になる', async () => {
+            const app = await startWithBothTapsCopied()
+            await choosePastePosition(app)
+            await cancelByPressingPasteAgain(app)
+
+            await app.timeline.click(at(1920, 0))
+
+            expect(app.timeline.notes()).toEqual(TWO_TAPS_WITH_TAP_PLACED_AT_BEAT_3_LANE_0)
+          })
+
+          it('2 つのタップノーツをコピーしているとき、「プレビュー」タブを選んでから「エディタ」タブを選び、1 小節目 3 拍目・レーン 0 をクリックすると、貼り付けは行われず、譜面のノーツの代替コンテンツは、元の 2 項目と置いた「タップノーツ 1 小節目 3 拍目 レーン 0」の 3 項目になる', async () => {
+            const app = await startWithBothTapsCopied()
+            await choosePastePosition(app)
+            await cancelByVisitingPreview(app)
+
+            await app.timeline.click(at(1920, 0))
+
+            expect(app.timeline.notes()).toEqual(TWO_TAPS_WITH_TAP_PLACED_AT_BEAT_3_LANE_0)
+          })
+
+          it('レーン数が 5 のとき、2 つのタップノーツをコピーしていて、1 小節目 3 拍目・レーン 4 をクリックすると、画面の下のメッセージに「ノーツが、先頭より前か、レーンの範囲外になります。位置をずらすか、レーン数を増やしてください」が表示される', async () => {
+            const app = await startWithBothTapsCopied()
+
+            await pasteWithButtonAt(app, 1920, 4)
+
+            expect(app.notice(OUT_OF_LANE_NOTICE)).toBeInTheDocument()
+          })
+
+          it('レーン数が 5 のとき、2 つのタップノーツをコピーしていて、1 小節目 3 拍目・レーン 4 をクリックしても、「貼り付け」ボタンは押された状態のままになる', async () => {
+            const app = await startWithBothTapsCopied()
+
+            await pasteWithButtonAt(app, 1920, 4)
+
+            expect(app.button('貼り付け')).toHaveAttribute('aria-pressed', 'true')
+          })
+
+          it('レーン数が 5 のとき、2 つのタップノーツをコピーしていて、1 小節目 3 拍目・レーン 4 をクリックして貼り付けに失敗したあと、1 小節目 3 拍目・レーン 0 をクリックすると、譜面のノーツの代替コンテンツは、元の 2 項目と貼り付けた「タップノーツ 1 小節目 3 拍目 レーン 0」「タップノーツ 1 小節目 3 拍目の 1/4 拍後 レーン 1」の 4 項目になる', async () => {
+            const app = await startWithBothTapsCopied()
+            await pasteWithButtonAt(app, 1920, 4)
+            expect(app.notice(OUT_OF_LANE_NOTICE), '貼り付けの失敗が表示されていません').toBeInTheDocument()
+
+            await app.timeline.click(at(1920, 0))
+
+            expect(app.timeline.notes()).toEqual([
+              'タップノーツ 1 小節目 1 拍目の 1/2 拍後 レーン 1',
+              'タップノーツ 1 小節目 1 拍目の 3/4 拍後 レーン 2',
+              'タップノーツ 1 小節目 3 拍目 レーン 0',
+              'タップノーツ 1 小節目 3 拍目の 1/4 拍後 レーン 1',
+            ])
+          })
+
+          it('レーン数が 5 のとき、2 つのタップノーツをコピーしていて、1 小節目 3 拍目・レーン 4 をクリックして貼り付けに失敗したあと、1 小節目 3 拍目・レーン 0 をクリックすると、「貼り付け」ボタンは押された状態でなくなる', async () => {
+            const app = await startWithBothTapsCopied()
+            await pasteWithButtonAt(app, 1920, 4)
+            expect(app.notice(OUT_OF_LANE_NOTICE), '貼り付けの失敗が表示されていません').toBeInTheDocument()
+
+            await app.timeline.click(at(1920, 0))
+
+            expect(app.button('貼り付け')).toHaveAttribute('aria-pressed', 'false')
+          })
+        })
+
+        describe('Ctrl+X の押下', () => {
+          it('1 小節目 1 拍目の 1/2 拍後・レーン 1 のタップノーツだけを選択して Ctrl+X を押すと、譜面のノーツの代替コンテンツから「タップノーツ 1 小節目 1 拍目の 1/2 拍後 レーン 1」が消えて 1 項目になり、続けて 1 小節目 3 拍目・レーン 0 にマウスを置いて Ctrl+V を押すと、「タップノーツ 1 小節目 3 拍目 レーン 0」が加わって 2 項目になる', async () => {
+            const app = await startWithTwoTaps()
+            await selectTap480Lane1(app)
+
+            await app.press('Ctrl+X')
+
+            expect(app.timeline.notes()).toEqual(['タップノーツ 1 小節目 1 拍目の 3/4 拍後 レーン 2'])
+
+            await pasteAt(app, 'Ctrl+V', 1920, 0)
+
+            expect(app.timeline.notes()).toEqual([
+              'タップノーツ 1 小節目 1 拍目の 3/4 拍後 レーン 2',
+              'タップノーツ 1 小節目 3 拍目 レーン 0',
+            ])
+          })
+        })
+
+        it.each([
+          { copy: 'Ctrl+C', paste: 'Ctrl+V' },
+          { copy: 'Cmd+C', paste: 'Cmd+V' },
+        ] as const)(
+          '2 つのタップノーツを選択して $copy でコピーし、1 小節目 3 拍目・レーン 0 にマウスを置いて $paste を押すと、譜面のノーツの代替コンテンツは、元の 2 項目と貼り付けた「タップノーツ 1 小節目 3 拍目 レーン 0」「タップノーツ 1 小節目 3 拍目の 1/4 拍後 レーン 1」の 4 項目になる',
+          async ({ copy, paste }) => {
+            const app = await startWithTwoTaps()
+            await selectBothTaps(app)
+            await app.press(copy)
+
+            await pasteAt(app, paste, 1920, 0)
+
+            expect(app.timeline.notes()).toEqual([
+              'タップノーツ 1 小節目 1 拍目の 1/2 拍後 レーン 1',
+              'タップノーツ 1 小節目 1 拍目の 3/4 拍後 レーン 2',
+              'タップノーツ 1 小節目 3 拍目 レーン 0',
+              'タップノーツ 1 小節目 3 拍目の 1/4 拍後 レーン 1',
+            ])
           },
         )
 
@@ -264,10 +426,58 @@ describe('[範囲選択] 選択したノーツ', () => {
 
           expect(app.notice(NOTHING_SELECTED_NOTICE)).toBeInTheDocument()
         })
+
+        it.each(['コピー', '切り取り', '貼り付け'])(
+          'ノーツを選択もコピーもしていないとき、右のパネルの「%s」ボタンは押せない状態になる',
+          async (name) => {
+            const app = await startWithTwoTaps()
+
+            expect(app.button(name)).toBeDisabled()
+          },
+        )
       })
     })
 
     describe('正常系', () => {
+      it('タップノーツが 1 小節目 1 拍目の 1/2 拍後・レーン 3 (時間が一番早い位置) と 1 小節目 1 拍目の 3/4 拍後・レーン 1 にあるとき、2 つを選択して Ctrl+C でコピーし、1 小節目 3 拍目・レーン 2 にマウスを置いて Ctrl+V を押すと、譜面のノーツの代替コンテンツは、元の 2 項目と貼り付けた「タップノーツ 1 小節目 3 拍目 レーン 2」「タップノーツ 1 小節目 3 拍目の 1/4 拍後 レーン 0」の 4 項目になる', async () => {
+        const app = await startWithTapsAt480Lane3AndAt720Lane1()
+        await app.timeline.selectEnclosing([
+          { tick: 480, lane: 3 },
+          { tick: 720, lane: 1 },
+        ])
+        await app.press('Ctrl+C')
+
+        await pasteAt(app, 'Ctrl+V', 1920, 2)
+
+        expect(app.timeline.notes()).toEqual([
+          'タップノーツ 1 小節目 1 拍目の 1/2 拍後 レーン 3',
+          'タップノーツ 1 小節目 1 拍目の 3/4 拍後 レーン 1',
+          'タップノーツ 1 小節目 3 拍目 レーン 2',
+          'タップノーツ 1 小節目 3 拍目の 1/4 拍後 レーン 0',
+        ])
+      })
+
+      it('タップノーツが 1 小節目 1 拍目の 1/2 拍後・レーン 1、1 小節目 1 拍目の 1/2 拍後・レーン 3、1 小節目 1 拍目の 3/4 拍後・レーン 0 にあり、時間が一番早い位置にレーン 1 とレーン 3 の 2 つがあるとき、3 つを選択して Ctrl+C でコピーし、1 小節目 3 拍目・レーン 2 にマウスを置いて Ctrl+V を押すと、譜面のノーツの代替コンテンツは、元の 3 項目と貼り付けた「タップノーツ 1 小節目 3 拍目 レーン 2」「タップノーツ 1 小節目 3 拍目 レーン 4」「タップノーツ 1 小節目 3 拍目の 1/4 拍後 レーン 1」の 6 項目になる', async () => {
+        const app = await startWithTapsAt480Lane1AndLane3AndAt720Lane0()
+        await app.timeline.selectEnclosing([
+          { tick: 480, lane: 1 },
+          { tick: 480, lane: 3 },
+          { tick: 720, lane: 0 },
+        ])
+        await app.press('Ctrl+C')
+
+        await pasteAt(app, 'Ctrl+V', 1920, 2)
+
+        expect(app.timeline.notes()).toEqual([
+          'タップノーツ 1 小節目 1 拍目の 1/2 拍後 レーン 1',
+          'タップノーツ 1 小節目 1 拍目の 1/2 拍後 レーン 3',
+          'タップノーツ 1 小節目 1 拍目の 3/4 拍後 レーン 0',
+          'タップノーツ 1 小節目 3 拍目 レーン 2',
+          'タップノーツ 1 小節目 3 拍目 レーン 4',
+          'タップノーツ 1 小節目 3 拍目の 1/4 拍後 レーン 1',
+        ])
+      })
+
       it('始点 1 小節目 1 拍目の 1/2 拍後・レーン 1、続く点 1 小節目 2 拍目・レーン 2 と 1 小節目 2 拍目の 1/2 拍後・レーン 3 のロングノーツだけがあるとき、1 つ目の続く点 (1 小節目 2 拍目・レーン 2) だけを選択して Ctrl+C でコピーし、2 小節目 1 拍目・レーン 0 にマウスを置いて Ctrl+V を押すと、ロングノーツ全体が貼り付けられ、譜面のノーツの代替コンテンツに「ロングノーツ 始点 2 小節目 1 拍目 レーン 0、続く点 2 小節目 1 拍目の 1/2 拍後 レーン 1、2 小節目 2 拍目 レーン 2、終端 離す」が出る', async () => {
         const app = await startWithLongNoteWithoutEndFlick()
         await app.timeline.selectEnclosing([{ tick: 960, lane: 2 }])
@@ -330,20 +540,20 @@ describe('[範囲選択] 選択したノーツ', () => {
       })
     })
 
-    describe('異常系', () => {
-      describe('ノーツがないとき', () => {
-        it('右のパネルの「全選択」ボタンは押せない状態になる', async () => {
-          const app = await startApp()
-
-          expect(app.button('全選択')).toBeDisabled()
-        })
-
+    describe('ノーツがないとき', () => {
+      describe('正常系', () => {
         it('Ctrl+A を押すと、画面の下のメッセージに「選択できるノーツがありません」が表示される', async () => {
           const app = await startApp()
 
           await app.press('Ctrl+A')
 
           expect(app.notice(NO_NOTES_TO_SELECT_NOTICE)).toBeInTheDocument()
+        })
+
+        it('右のパネルの「全選択」ボタンは押せない状態になる', async () => {
+          const app = await startApp()
+
+          expect(app.button('全選択')).toBeDisabled()
         })
       })
     })
@@ -388,9 +598,7 @@ describe('[範囲選択] 選択したノーツ', () => {
             'タップノーツ 1 小節目 4 拍目 レーン 1',
           ])
         })
-      })
 
-      describe('異常系', () => {
         it.each(['1 拍 後ろへ', '1 拍 前へ'])(
           'ノーツを選択していないとき、右のパネルの「%s」ボタンは押せない状態になる',
           async (name) => {
@@ -402,7 +610,7 @@ describe('[範囲選択] 選択したノーツ', () => {
       })
     })
 
-    describe('異常系', () => {
+    describe('正常系', () => {
       describe('1 小節目 1 拍目・レーン 0 のタップノーツだけがあるとき', () => {
         it('全選択して、右のパネルの「1 拍 前へ」ボタンを押すと、画面の下のメッセージに「先頭より前には動かせません」が表示される', async () => {
           const app = await startApp()
@@ -479,9 +687,7 @@ describe('[範囲選択] 選択したノーツ', () => {
             'ロングノーツ 始点 1 小節目 1 拍目 レーン 3、続く点 1 小節目 1 拍目の 1/2 拍後 レーン 1、終端 左フリック',
           )
         })
-      })
 
-      describe('異常系', () => {
         describe('1 小節目 1 拍目の 1/2 拍後・レーン 0 と 1 小節目 1 拍目の 1/2 拍後・レーン 4 にタップノーツがあるとき', () => {
           it('1 小節目 1 拍目の 1/2 拍後・レーン 0 のタップノーツを選択して、右のパネルの「左右反転」ボタンを押すと、画面の下のメッセージに「同じ位置にノーツがあります」が表示される', async () => {
             const app = await startWithTapAt480Lane0AndLane4()
@@ -595,7 +801,7 @@ describe('[ノーツの編集] 取り消しとやり直し', () => {
       })
     })
 
-    describe('異常系', () => {
+    describe('正常系', () => {
       it('ノーツがない譜面で Ctrl+Z を押しても、戻す操作がなく、譜面のノーツの代替コンテンツは空のままになる', async () => {
         const app = await startApp()
 
@@ -691,9 +897,7 @@ describe('[タイムラインの表示] タイムライン', () => {
 
         expect(app.timeline.items()).toContain('スクロール位置 51 小節目 1 拍目')
       })
-    })
 
-    describe('異常系', () => {
       it('スクロール位置が 1 小節目 1 拍目のとき、ホイールを下へ 100 ピクセル分回しても、1 小節目 1 拍目より先へは進まず、タイムラインの代替コンテンツに「スクロール位置 1 小節目 1 拍目」が出たままになる', async () => {
         const app = await startApp()
 
@@ -748,7 +952,7 @@ describe('[タイムラインの表示] タイムライン', () => {
 
 describe('[ノーツの個数の上限] ノーツの貼り付け', () => {
   describe('ノーツが 3000 個あり、1 小節目 2 拍目・レーン 0 のタップノーツを選択して Ctrl+C でコピーしたとき', () => {
-    describe('異常系', () => {
+    describe('正常系', () => {
       it('ノーツのない 1 小節目 1 拍目の 1/4 拍後・レーン 0 にマウスを置いて Ctrl+V を押すと、画面の下のメッセージに「ノーツは 3000 個までです」が表示され、貼り付けは効かず、譜面のノーツの代替コンテンツは 3000 項目のままになる', async () => {
         const app = await startWithMaxNotes()
         await app.timeline.selectEnclosing([{ tick: 960, lane: 0 }])

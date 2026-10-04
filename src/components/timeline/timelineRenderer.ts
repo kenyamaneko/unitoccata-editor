@@ -78,6 +78,8 @@ export interface TimelineScene {
   readonly gridDivision: GridDivision
   readonly waveform: WaveformPeaks | null
   readonly overlay: DragOverlay | null
+  /** 貼り付ける位置を選ぶ間に、貼り付け後の位置に半透明で重ねるノーツ。貼り付ける位置を選んでいなければ null。 */
+  readonly pastePreview: readonly Note[] | null
   /** BPM または拍子を入力中の位置。入力中でなければ null。 */
   readonly editingTarget: { readonly kind: SideColumn; readonly tick: number } | null
 }
@@ -86,6 +88,9 @@ const BAR_LABEL_FONT = '700 16px ui-sans-serif, system-ui, sans-serif'
 const SIDE_LABEL_FONT = '700 14px ui-sans-serif, system-ui, sans-serif'
 const MIN_LINE_SPACING_PX = 4
 const WAVEFORM_ROW_PX = 2
+
+/** 貼り付けのプレビューの不透明度。置いてあるノーツと見分けられる薄さにする。 */
+const PASTE_PREVIEW_ALPHA = 0.5
 
 function drawLanes(ctx: CanvasRenderingContext2D, viewport: TimelineViewport): void {
   const left = calculateNoteAreaLeft()
@@ -378,6 +383,22 @@ function drawNotes(ctx: CanvasRenderingContext2D, scene: TimelineScene): void {
   }
 }
 
+function drawPastePreview(ctx: CanvasRenderingContext2D, scene: TimelineScene): void {
+  if (scene.pastePreview === null) {
+    return
+  }
+  ctx.save()
+  ctx.globalAlpha = PASTE_PREVIEW_ALPHA
+  for (const note of scene.pastePreview) {
+    if (note.type === 'long') {
+      drawLong(ctx, scene, note, false)
+    } else {
+      drawShortNote(ctx, scene, note, false)
+    }
+  }
+  ctx.restore()
+}
+
 function drawOverlay(ctx: CanvasRenderingContext2D, viewport: TimelineViewport, overlay: DragOverlay | null): void {
   if (overlay === null) {
     return
@@ -436,5 +457,6 @@ export function drawTimeline(ctx: CanvasRenderingContext2D, scene: TimelineScene
   drawSideLanes(ctx, scene)
   drawEditingTarget(ctx, scene)
   drawNotes(ctx, scene)
+  drawPastePreview(ctx, scene)
   drawOverlay(ctx, viewport, scene.overlay)
 }

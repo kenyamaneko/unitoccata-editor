@@ -49,18 +49,27 @@ export interface VelocityRange {
 
 /** 取り込みの設定。 */
 export interface MidiImportOptions {
-  /** 音程 (MIDI ノート番号) からレーンへの割り当て。ここにない音程は無視する。 */
+  /** 音程 (MIDI ノート番号) からレーンへの割り当て。ここにない音程のノートは取り込まず、音程ごとにまとめて warnings に載せる。 */
   readonly pitchToLane: ReadonlyMap<number, number>
   readonly velocityRanges: readonly VelocityRange[]
   readonly laneCount: number
 }
 
 /** 取り込みで見つかった、ノーツを取り込めなかった事例。 */
-export interface MidiImportWarning {
-  readonly reason: 'velocity-out-of-range' | 'zero-length-long' | 'duplicate-position'
-  readonly tick: number
-  readonly lane: number
-}
+export type MidiImportWarning =
+  | {
+      readonly reason: 'velocity-out-of-range' | 'zero-length-long' | 'duplicate-position'
+      readonly tick: number
+      readonly lane: number
+    }
+  | {
+      /** 音程がどのレーンにも割り当てられていない。音程ごとに 1 件にまとめる。 */
+      readonly reason: 'pitch-not-assigned'
+      /** MIDI ノート番号。 */
+      readonly pitch: number
+      /** その音程の、取り込めなかったノートの個数。 */
+      readonly count: number
+    }
 
 /** 取り込みの結果。 */
 export interface MidiImportResult {
@@ -167,10 +176,12 @@ export function importMidi(song: MidiSong, options: MidiImportOptions, createId:
   const warnings: MidiImportWarning[] = []
   const notes: Note[] = []
   const occupied = new Set<string>()
+  const unassignedPitchCounts = new Map<number, number>()
 
   for (const midiNote of [...song.notes].sort((a, b) => a.tick - b.tick)) {
     const lane = options.pitchToLane.get(midiNote.pitch)
     if (lane === undefined) {
+      unassignedPitchCounts.set(midiNote.pitch, (unassignedPitchCounts.get(midiNote.pitch) ?? 0) + 1)
       continue
     }
     const tick = scale(midiNote.tick)
@@ -205,6 +216,10 @@ export function importMidi(song: MidiSong, options: MidiImportOptions, createId:
         return assertNever(kind)
     }
     occupied.add(key)
+  }
+
+  for (const [pitch, count] of [...unassignedPitchCounts].sort(([a], [b]) => a - b)) {
+    warnings.push({ reason: 'pitch-not-assigned', pitch, count })
   }
 
   if (notes.length > MAX_NOTE_COUNT) {

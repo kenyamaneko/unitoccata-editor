@@ -201,9 +201,7 @@ describe('[拍と小節] 拍の tick', () => {
           expect(beatTicks(projectInfo, fromTick, toTick)).toEqual(ticks)
         },
       )
-    })
 
-    describe('異常系', () => {
       it('tick 960 以上 960 未満の拍の数は、拍子が 4/4 だけのとき、0 になる', () => {
         expect(listBeats(meter44Only, 960, 960)).toHaveLength(0)
       })

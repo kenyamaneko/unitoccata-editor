@@ -173,3 +173,32 @@ describe('[クラウドから開く] 譜面の読み込みの失敗', () => {
     })
   })
 })
+
+describe('[クラウドから開く] 譜面名のボタンの連続押下', () => {
+  describe('保存した曲「テスト曲」の譜面「譜面1」にタップノーツが 3 個あり、譜面の読み込みが終わらないとき、譜面名のボタン「譜面1」を続けて 2 回押すと', () => {
+    describe('正常系', () => {
+      it('タイムラインのノーツの代替コンテンツは、保存してあった 3 個だけになる', async () => {
+        const app = await startSignedIn()
+        await app.cloud.putProject({ title: SONG })
+        await app.cloud.putChart(SONG, {
+          name: CHART,
+          notes: [
+            { tick: 480, lane: 2, type: 'tap' },
+            { tick: 960, lane: 1, type: 'tap' },
+            { tick: 1440, lane: 3, type: 'tap' },
+          ],
+        })
+        const pending = app.cloudFaults.pendOperation('firestore-read', { songName: SONG, chartName: CHART })
+        await openSongChartList(app)
+        const chartButton = within(openDialog()).getByRole('button', { name: CHART })
+
+        await app.click(chartButton)
+        await app.click(chartButton)
+        pending.forEach((operation) => operation.release())
+        await app.settle()
+
+        expect(app.timeline.notes()).toHaveLength(3)
+      })
+    })
+  })
+})

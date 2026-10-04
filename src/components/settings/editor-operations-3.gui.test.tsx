@@ -48,46 +48,7 @@ describe('[譜面設定] レーン数', () => {
 
             expect(app.chartSettings.laneDecreaseButton()).toBeDisabled()
           })
-        })
 
-        describe('レーン数の「＋」ボタンの押下', () => {
-          it('レーン数の「＋」ボタンを 10 回押すと、「譜面設定」ダイアログのレーン数の「＋」ボタンは、押せる状態で表示される', async () => {
-            const app = await startApp()
-            await app.chartSettings.open()
-
-            await app.chartSettings.increaseLaneCount(10)
-
-            expect(app.chartSettings.laneIncreaseButton()).toBeEnabled()
-          })
-
-          it.each([
-            { presses: 11, count: 16 },
-            { presses: 1, count: 6 },
-          ])(
-            'レーン数の「＋」ボタンを $presses 回押すと、「譜面設定」ダイアログのレーン数は、$count になる',
-            async ({ presses, count }) => {
-              const app = await startApp()
-              await app.chartSettings.open()
-
-              await app.chartSettings.increaseLaneCount(presses)
-
-              expect(app.chartSettings.laneCount()).toBe(count)
-            },
-          )
-
-          it('レーン数の「＋」ボタンを 11 回押すと、「譜面設定」ダイアログのレーン数の「＋」ボタンは、押せない状態で表示される', async () => {
-            const app = await startApp()
-            await app.chartSettings.open()
-
-            await app.chartSettings.increaseLaneCount(11)
-
-            expect(app.chartSettings.laneIncreaseButton()).toBeDisabled()
-          })
-        })
-      })
-
-      describe('異常系', () => {
-        describe('レーン数の「−」ボタンの押下', () => {
           it('レーン 3 にノーツがあるとき、レーン数の「−」ボタンを 2 回押すと、画面の下のメッセージに「レーン数を 3 に減らすと、範囲外になるノーツが 1 つあります」が表示される', async () => {
             const app = await startApp()
             await app.loadChart([{ type: 'tap', tick: 480, lane: 3 }])
@@ -135,6 +96,41 @@ describe('[譜面設定] レーン数', () => {
             expect(app.chartSettings.laneCount()).toBe(5)
           })
         })
+
+        describe('レーン数の「＋」ボタンの押下', () => {
+          it('レーン数の「＋」ボタンを 10 回押すと、「譜面設定」ダイアログのレーン数の「＋」ボタンは、押せる状態で表示される', async () => {
+            const app = await startApp()
+            await app.chartSettings.open()
+
+            await app.chartSettings.increaseLaneCount(10)
+
+            expect(app.chartSettings.laneIncreaseButton()).toBeEnabled()
+          })
+
+          it.each([
+            { presses: 11, count: 16 },
+            { presses: 1, count: 6 },
+          ])(
+            'レーン数の「＋」ボタンを $presses 回押すと、「譜面設定」ダイアログのレーン数は、$count になる',
+            async ({ presses, count }) => {
+              const app = await startApp()
+              await app.chartSettings.open()
+
+              await app.chartSettings.increaseLaneCount(presses)
+
+              expect(app.chartSettings.laneCount()).toBe(count)
+            },
+          )
+
+          it('レーン数の「＋」ボタンを 11 回押すと、「譜面設定」ダイアログのレーン数の「＋」ボタンは、押せない状態で表示される', async () => {
+            const app = await startApp()
+            await app.chartSettings.open()
+
+            await app.chartSettings.increaseLaneCount(11)
+
+            expect(app.chartSettings.laneIncreaseButton()).toBeDisabled()
+          })
+        })
       })
     })
   })
@@ -179,9 +175,7 @@ describe('[プロジェクト情報] 小節数', () => {
 
         expect(app.timeline.items()).toContain('スクロール位置 101 小節目 1 拍目')
       })
-    })
 
-    describe('異常系', () => {
       describe('「小節数」の入力欄に 1 を入力してエンターキーを押す', () => {
         it.each<[string, (app: AppDriver) => Promise<void>]>([
           ['2 小節目 1 拍目にノーツがあるとき', (app) => app.loadChart([{ type: 'tap', tick: 3840, lane: 2 }])],
@@ -322,9 +316,7 @@ describe('[譜面設定] 譜面名', () => {
 
         expect(app.chartSettings.chartNameMessage()).toBeNull()
       })
-    })
 
-    describe('異常系', () => {
       it.each([
         { given: '半角の空白だけを入力すると', entry: '   ', message: '譜面名を入力してください' },
         {

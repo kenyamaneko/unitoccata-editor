@@ -22,6 +22,14 @@ const createTempoAndMeterMidiFile = (): File =>
     timeSignatures: [{ tick: 0, numerator: 3, denominator: 4 }],
   })
 
+const createNotesTempoAndMeterMidiFile = (): File =>
+  createMidiFile('notes-tempo-and-meter.mid', {
+    ticksPerQuarter: 480,
+    tempos: [{ tick: 0, microsecondsPerQuarter: 468750 }],
+    timeSignatures: [{ tick: 0, numerator: 3, denominator: 4 }],
+    notes: [{ tick: 0, pitch: 'C3', velocity: 80, durationTicks: 120 }],
+  })
+
 const createSingleTapMidiFile = (tick: number): File =>
   createNotesMidiFile([{ tick, pitch: 'C3', velocity: 80, durationTicks: 120 }])
 
@@ -101,21 +109,42 @@ const startWithOffsetAndNote = async (): Promise<AppDriver> => {
   return app
 }
 
-const startWithNoteAndProjectInfo = async (): Promise<AppDriver> => {
+const startWithProjectInfo = async (
+  chartNotes: Parameters<AppDriver['loadChart']>[0],
+  midiFile: File = createTempoAndMeterMidiFile(),
+): Promise<AppDriver> => {
   const app = await startApp()
-  await app.loadChart([{ type: 'tap', tick: 480, lane: 1 }], undefined, {
+  await app.loadChart(chartNotes, undefined, {
     tempo: [{ tick: 0, bpm: 150 }],
     meter: [{ tick: 0, num: 5, den: 8 }],
   })
-  await app.files.chooseMidi(createTempoAndMeterMidiFile())
+  await app.files.chooseMidi(midiFile)
   return app
 }
+
+const startWithNoteAndProjectInfo = (midiFile?: File): Promise<AppDriver> =>
+  startWithProjectInfo([{ type: 'tap', tick: 480, lane: 1 }], midiFile)
+
+const startWithEmptyChartAndProjectInfo = (): Promise<AppDriver> => startWithProjectInfo([])
+
+const TEMPO_CHECKBOX = 'テンポを取り込む'
+const METER_CHECKBOX = '拍子を取り込む'
 
 const createLeftFlickMidiFile = (): File =>
   createNotesMidiFile([{ tick: 480, pitch: 'C3', velocity: 1, durationTicks: 120 }])
 
 const createZeroLengthLongMidiFile = (): File =>
   createNotesMidiFile([{ tick: 480, pitch: 'C3', velocity: 35, durationTicks: 0 }])
+
+const createUnassignedPitchMidiFile = (): File =>
+  createNotesMidiFile([{ tick: 480, pitch: 'C2', velocity: 80, durationTicks: 120 }])
+
+const createThreeUnassignedPitchMidiFile = (): File =>
+  createNotesMidiFile([
+    { tick: 0, pitch: 'C2', velocity: 80, durationTicks: 120 },
+    { tick: 480, pitch: 'C2', velocity: 80, durationTicks: 120 },
+    { tick: 960, pitch: 'C2', velocity: 80, durationTicks: 120 },
+  ])
 
 const createOverlappingMidiFile = (): File =>
   createNotesMidiFile([
@@ -167,19 +196,119 @@ describe('[MIDI 取り込み] 取り込みダイアログの表示', () => {
 describe('[MIDI 取り込み] ノーツがある譜面でのテンポと拍子の取り込みの注意', () => {
   describe('「ファイル」メニューの「インポート」の「MIDI」でのファイルの選択', () => {
     describe('正常系', () => {
-      it('譜面が空のとき、MIDI ファイルを選ぶと、ダイアログに「譜面にノーツがあるため、MIDI のテンポと拍子は取り込みません。」と表示されない', async () => {
-        const app = await openDialogWith(createPlainMidiFile())
+      it.each([
+        ['譜面が空のとき', async (): Promise<AppDriver> => openDialogWith(createPlainMidiFile())],
+        ['譜面にノーツがあるとき', async (): Promise<AppDriver> => startWithNoteAndProjectInfo(createPlainMidiFile())],
+      ])(
+        '%s、MIDI ファイルを選んでも、ダイアログに「譜面にノーツがあるため、MIDI のテンポと拍子は取り込みません。」と表示されない',
+        async (_condition, start) => {
+          const app = await start()
 
-        expect(app.midiDialog.text(NOTE_PRESENT_NOTICE)).toBeNull()
+          expect(app.midiDialog.text(NOTE_PRESENT_NOTICE)).toBeNull()
+        },
+      )
+    })
+  })
+})
+
+describe('[MIDI 取り込み] テンポと拍子を取り込むかの選択', () => {
+  describe('「ファイル」メニューの「インポート」の「MIDI」でのファイルの選択', () => {
+    describe('正常系', () => {
+      it('譜面にノーツがあるとき、MIDI ファイルを選ぶと、ダイアログの「テンポを取り込む」と「拍子を取り込む」は選ばれていない', async () => {
+        const app = await startWithNoteAndProjectInfo()
+
+        expect(app.field(TEMPO_CHECKBOX)).not.toBeChecked()
+        expect(app.field(METER_CHECKBOX)).not.toBeChecked()
       })
 
-      it('譜面にノーツがあるとき、MIDI ファイルを選ぶと、ダイアログに「譜面にノーツがあるため、MIDI のテンポと拍子は取り込みません。」と表示される', async () => {
-        const app = await startApp()
-        await app.loadChart([{ type: 'tap', tick: 480, lane: 1 }])
+      it('譜面にノーツがないとき、MIDI ファイルを選ぶと、ダイアログの「テンポを取り込む」と「拍子を取り込む」は選ばれている', async () => {
+        const app = await openDialogWith(createTempoAndMeterMidiFile())
 
-        await app.files.chooseMidi(createPlainMidiFile())
+        expect(app.field(TEMPO_CHECKBOX)).toBeChecked()
+        expect(app.field(METER_CHECKBOX)).toBeChecked()
+      })
+    })
+  })
 
-        expect(app.midiDialog.text(NOTE_PRESENT_NOTICE)).toBeInTheDocument()
+  describe('ダイアログで「確認する」と「取り込む」を押す', () => {
+    describe('正常系', () => {
+      describe('譜面にノーツがあり、譜面のテンポが 1 小節目 1 拍目・BPM 150、拍子が 1 小節目 1 拍目・5/8 で、MIDI のテンポが 468750 マイクロ秒、拍子が 3/4 のとき', () => {
+        describe('「テンポを取り込む」だけを選ぶ', () => {
+          const importTempoOnly = async (): Promise<AppDriver> => {
+            const app = await startWithNoteAndProjectInfo()
+            await app.click(app.field(TEMPO_CHECKBOX))
+            await importMidi(app)
+            return app
+          }
+
+          it('タイムラインのテンポの代替コンテンツは「1 小節目 1 拍目 BPM 128」だけになる', async () => {
+            expect((await importTempoOnly()).timeline.tempos()).toEqual(['1 小節目 1 拍目 BPM 128'])
+          })
+
+          it('タイムラインの拍子の代替コンテンツは「1 小節目 1 拍目 5/8」だけのままになる', async () => {
+            expect((await importTempoOnly()).timeline.meters()).toEqual(['1 小節目 1 拍目 5/8'])
+          })
+        })
+
+        describe('「拍子を取り込む」だけを選ぶ', () => {
+          const importMeterOnly = async (): Promise<AppDriver> => {
+            const app = await startWithNoteAndProjectInfo()
+            await app.click(app.field(METER_CHECKBOX))
+            await importMidi(app)
+            return app
+          }
+
+          it('タイムラインの拍子の代替コンテンツは「1 小節目 1 拍目 3/4」だけになる', async () => {
+            expect((await importMeterOnly()).timeline.meters()).toEqual(['1 小節目 1 拍目 3/4'])
+          })
+
+          it('タイムラインのテンポの代替コンテンツは「1 小節目 1 拍目 BPM 150」だけのままになる', async () => {
+            expect((await importMeterOnly()).timeline.tempos()).toEqual(['1 小節目 1 拍目 BPM 150'])
+          })
+        })
+      })
+
+      describe('譜面が空で、譜面のテンポが 1 小節目 1 拍目・BPM 150、拍子が 1 小節目 1 拍目・5/8 で、MIDI のテンポが 468750 マイクロ秒、拍子が 3/4 のとき', () => {
+        describe('「テンポを取り込む」の選択を外す', () => {
+          const importWithoutTempo = async (): Promise<AppDriver> => {
+            const app = await startWithEmptyChartAndProjectInfo()
+            await app.click(app.field(TEMPO_CHECKBOX))
+            await importMidi(app)
+            return app
+          }
+
+          it('タイムラインのテンポの代替コンテンツは「1 小節目 1 拍目 BPM 150」だけのままになる', async () => {
+            expect((await importWithoutTempo()).timeline.tempos()).toEqual(['1 小節目 1 拍目 BPM 150'])
+          })
+
+          it('タイムラインの拍子の代替コンテンツは「1 小節目 1 拍目 3/4」だけになる', async () => {
+            expect((await importWithoutTempo()).timeline.meters()).toEqual(['1 小節目 1 拍目 3/4'])
+          })
+        })
+      })
+
+      describe('譜面にノーツがあり、譜面のテンポが 1 小節目 1 拍目・BPM 150、拍子が 1 小節目 1 拍目・5/8 で、tick 0 に C3 のノートがある MIDI のテンポが 468750 マイクロ秒、拍子が 3/4 のとき', () => {
+        describe('「テンポを取り込む」も「拍子を取り込む」も選ばない', () => {
+          const importWithoutTempoAndMeter = async (): Promise<AppDriver> => {
+            const app = await startWithNoteAndProjectInfo(createNotesTempoAndMeterMidiFile())
+            await importMidi(app)
+            return app
+          }
+
+          it('タイムラインのテンポの代替コンテンツは「1 小節目 1 拍目 BPM 150」だけのままになる', async () => {
+            expect((await importWithoutTempoAndMeter()).timeline.tempos()).toEqual(['1 小節目 1 拍目 BPM 150'])
+          })
+
+          it('タイムラインの拍子の代替コンテンツは「1 小節目 1 拍目 5/8」だけのままになる', async () => {
+            expect((await importWithoutTempoAndMeter()).timeline.meters()).toEqual(['1 小節目 1 拍目 5/8'])
+          })
+
+          it('譜面のノーツの代替コンテンツに「タップノーツ 1 小節目 1 拍目 レーン 0」が出る', async () => {
+            expect((await importWithoutTempoAndMeter()).timeline.notes()).toContain(
+              'タップノーツ 1 小節目 1 拍目 レーン 0',
+            )
+          })
+        })
       })
     })
   })
@@ -275,19 +404,9 @@ describe('[MIDI 取り込み] 確認結果の件数の表示', () => {
               { tick: 480, pitch: 'C3', velocity: 80, durationTicks: 120 },
               { tick: 480, pitch: 'C#3', velocity: 80, durationTicks: 120 },
             ]),
+          leaveAsIs,
         ],
-        [`${MIXED_NOTES_GIVEN}とき`, '取り込むノーツ 3 個、取り込めないノート 0 個', createMixedMidiFile],
-      ])('%s、ダイアログに「%s」と表示される', async (_condition, summary, file) => {
-        const app = await openDialogWith(file())
-
-        await app.midiDialog.confirm()
-
-        expect(app.midiDialog.summary()).toBe(summary)
-      })
-    })
-
-    describe('異常系', () => {
-      it.each([
+        [`${MIXED_NOTES_GIVEN}とき`, '取り込むノーツ 3 個、取り込めないノート 0 個', createMixedMidiFile, leaveAsIs],
         [
           'ベロシティ 1 のノートがある状態で、「ベロシティの範囲」の「左フリックノーツ」の行の最小の入力欄を 1 から 2 にしたとき',
           '取り込むノーツ 0 個、取り込めないノート 1 個',
@@ -307,16 +426,22 @@ describe('[MIDI 取り込み] 確認結果の件数の表示', () => {
           leaveAsIs,
         ],
         [
+          'ノートの音程 C2 が、音程とレーンの対応の C3〜E3 にないとき',
+          '取り込むノーツ 0 個、取り込めないノート 1 個',
+          createUnassignedPitchMidiFile,
+          leaveAsIs,
+        ],
+        [
+          'ノートの音程 C2 が、音程とレーンの対応の C3〜E3 にないノートが 3 つあるとき',
+          '取り込むノーツ 0 個、取り込めないノート 3 個',
+          createThreeUnassignedPitchMidiFile,
+          leaveAsIs,
+        ],
+        [
           'ベロシティ 0 のノートオンだけがあるとき',
           '取り込むノーツ 0 個、取り込めないノート 0 個',
           (): File =>
             createNotesMidiFile([{ tick: 480, pitch: 'C3', velocity: 0, durationTicks: 0, noteOnOnly: true }]),
-          leaveAsIs,
-        ],
-        [
-          'ノートの音程 C2 が、音程とレーンの対応の C3〜E3 にないとき',
-          '取り込むノーツ 0 個、取り込めないノート 0 個',
-          (): File => createNotesMidiFile([{ tick: 480, pitch: 'C2', velocity: 80, durationTicks: 120 }]),
           leaveAsIs,
         ],
       ])('%s、ダイアログに「%s」と表示される', async (_condition, summary, file, operate) => {
@@ -357,7 +482,7 @@ describe('[MIDI 取り込み] 確認結果の件数の表示', () => {
 
 describe('[MIDI 取り込み] 取り込むノーツの個数の上限', () => {
   describe('「確認する」の押下', () => {
-    describe('異常系', () => {
+    describe('正常系', () => {
       it('レーン 0 からレーン 4 に対応する音程 C3、C#3、D3、D#3、E3 のベロシティ 80 のノートが合わせて 3001 個ある MIDI のとき、ダイアログに「取り込むノーツが 3001 個あり、上限の 3000 個を超えます。ベロシティの範囲や音程の割り当てを見直して、ノーツを減らしてから、もう一度確認してください」と表示される', async () => {
         const pitches = ['C3', 'C#3', 'D3', 'D#3', 'E3']
         const app = await openDialogWith(
@@ -385,7 +510,7 @@ describe('[MIDI 取り込み] 取り込むノーツの個数の上限', () => {
 
 describe('[MIDI 取り込み] 取り込めないノートの項目の表示', () => {
   describe('「確認する」の押下', () => {
-    describe('異常系', () => {
+    describe('正常系', () => {
       describe('4 分音符 1 つあたり 480 tick の MIDI のとき', () => {
         it.each([
           [
@@ -406,13 +531,27 @@ describe('[MIDI 取り込み] 取り込めないノートの項目の表示', ()
             createMixedMidiFile,
             enterVelocity(UP_FLICK_ROW, 'min', '16'),
           ],
-        ])('%s、項目「%s」が出る', async (_condition, item, file, operate) => {
+          [
+            'ノートの音程 C2 が、音程とレーンの対応の C3〜E3 にないとき',
+            '音程 C2: レーンに割り当てていない音程 (1 個)',
+            createUnassignedPitchMidiFile,
+            leaveAsIs,
+          ],
+        ])('%s、ダイアログの取り込めないノートの一覧に項目「%s」が出る', async (_condition, item, file, operate) => {
           const app = await openDialogWith(file())
           await operate(app)
 
           await app.midiDialog.confirm()
 
           expect(app.midiDialog.warnings()).toContain(item)
+        })
+
+        it('ノートの音程 C2 が、音程とレーンの対応の C3〜E3 にないノートが 3 つあるとき、ダイアログの取り込めないノートの一覧に項目「音程 C2: レーンに割り当てていない音程 (3 個)」だけが出る', async () => {
+          const app = await openDialogWith(createThreeUnassignedPitchMidiFile())
+
+          await app.midiDialog.confirm()
+
+          expect(app.midiDialog.warnings()).toEqual(['音程 C2: レーンに割り当てていない音程 (3 個)'])
         })
       })
     })
@@ -421,7 +560,7 @@ describe('[MIDI 取り込み] 取り込めないノートの項目の表示', ()
 
 describe('[MIDI 取り込み] 音程とレーンの対応の入力の確認', () => {
   describe('「確認する」の押下', () => {
-    describe('異常系', () => {
+    describe('正常系', () => {
       it.each([
         ['レーン 0 に対応する音程として X9 を入力したとき', 'レーン 0 の音程「X9」を読めません', enterPitch(0, 'X9')],
         [
@@ -448,7 +587,7 @@ describe('[MIDI 取り込み] 音程とレーンの対応の入力の確認', ()
 
 describe('[MIDI 取り込み] ベロシティの入力の確認', () => {
   describe('「確認する」の押下', () => {
-    describe('異常系', () => {
+    describe('正常系', () => {
       it.each([
         [
           '「ベロシティの範囲」の「タップノーツ」の行の最小の入力欄の 71 を消したとき',
@@ -498,9 +637,7 @@ describe('[MIDI 取り込み] 「取り込む」の押せる状態', () => {
         )
         expect(app.midiDialog.importButton()).toBeEnabled()
       })
-    })
 
-    describe('異常系', () => {
       it('レーン 0 に対応する音程として X9 を入力したとき、「確認する」を押すと、ダイアログの「取り込む」が押せない', async () => {
         const app = await openDialogWith(createPlainMidiFile())
         await app.midiDialog.setPitch(0, 'X9')
@@ -550,9 +687,7 @@ describe('[MIDI 取り込み] 「取り込む」の押せる状態', () => {
           expect(app.midiDialog.importButton()).toBeEnabled()
         })
       })
-    })
 
-    describe('異常系', () => {
       it('レーン 0 に対応する音程として X9 を入力して「確認する」を押した後に、C3 を入力し直して、もう一度「確認する」を押すと、ダイアログの「取り込む」が押せる', async () => {
         const app = await openDialogWith(createPlainMidiFile())
         await app.midiDialog.setPitch(0, 'X9')
@@ -589,6 +724,16 @@ describe('[MIDI 取り込み] 取り込んだノーツの表示', () => {
             expect(app.timeline.notes()).toContain(note)
           },
         )
+      })
+
+      it(`${MIXED_NOTES_GIVEN} MIDI ファイルのとき、ダイアログで「確認する」を押してから「取り込む」を続けて 2 回押すと、譜面のノーツの代替コンテンツは 3 個だけになる`, async () => {
+        const app = await openDialogWith(createMixedMidiFile())
+        await app.midiDialog.confirm()
+
+        await app.user.dblClick(app.midiDialog.importButton())
+        await app.settle()
+
+        expect(app.timeline.notes()).toHaveLength(3)
       })
 
       it('レーン 0 に対応する音程として C4 を入力したとき、tick 0 に C4 のノートがある MIDI について、「確認する」と「取り込む」を押すと、譜面のノーツの代替コンテンツに「タップノーツ 1 小節目 1 拍目 レーン 0」が出る', async () => {

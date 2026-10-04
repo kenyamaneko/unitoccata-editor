@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { isCloudConfigured, signInWithGoogle } from '../../adapter/cloud/firebaseClient.ts'
 import { describeFailure } from '../../utils/describeFailure.ts'
 import { logFailure } from '../../utils/logFailure.ts'
+import { useEditorStore } from '../../state/editorStore.ts'
 import { LegalDialog } from '../legal/LegalDialog.tsx'
 
 /** ログインのダイアログ。エディタの右のパネルから開き、ログインできたらエディタ画面に戻る。 */
@@ -14,6 +15,7 @@ export function LoginDialog() {
     setMessage(null)
     try {
       if ((await signInWithGoogle()) === 'signedIn') {
+        useEditorStore.getState().dismissNotice()
         window.location.hash = '#/'
       }
     } catch (error) {
