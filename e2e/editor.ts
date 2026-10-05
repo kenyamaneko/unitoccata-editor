@@ -83,8 +83,8 @@ export async function chooseFileMenuItem(page: Page, name: string): Promise<void
   await page.getByRole('menuitem', { name, exact: true }).click()
 }
 
-/** 「ファイル」メニュー「インポート」の項目を押して、ファイルを選ぶ。 */
-export async function importFile(page: Page, menuItem: '音源' | '譜面', path: string): Promise<void> {
+/** 「ファイル」メニューの項目を押して開くファイル選択に、ファイルを渡す。 */
+async function importFile(page: Page, menuItem: string, path: string): Promise<void> {
   const choosing = page.waitForEvent('filechooser')
   await chooseFileMenuItem(page, menuItem)
   await (await choosing).setFiles(path)
@@ -96,7 +96,7 @@ export async function loadAudio(page: Page, path: string): Promise<void> {
   await expect(page.getByText(SAMPLE_AUDIO_FILE_NAME)).toBeVisible()
 }
 
-/** 譜面ファイルを「インポート」の「譜面」で読み込む。 */
+/** 「ファイル」メニュー「インポート」の「譜面」で、譜面ファイルを読み込む。 */
 export async function loadChartFile(page: Page, path: string): Promise<void> {
   await importFile(page, '譜面', path)
 }
@@ -222,9 +222,19 @@ export async function placeSampleNotes(page: Page): Promise<void> {
   await expect(readNoteDescriptions(page)).toHaveText(SAMPLE_NOTE_DESCRIPTIONS)
 }
 
-/** タイムラインの「譜面のノーツ」の一覧の項目を返す。 */
+/** タイムラインの「譜面のノーツ」の一覧の項目を返す。一覧は canvas の代替内容で、role では取れないため li で探す。 */
 export function readNoteDescriptions(page: Page) {
   return page.getByLabel('譜面のノーツ').locator('li')
+}
+
+/** タイムラインの「テンポ」の一覧の項目を返す。 */
+export function readTempoDescriptions(page: Page) {
+  return page.getByLabel('テンポ').locator('li')
+}
+
+/** タイムラインの「拍子」の一覧の項目を返す。 */
+export function readMeterDescriptions(page: Page) {
+  return page.getByLabel('拍子').locator('li')
 }
 
 /** プロジェクト情報・譜面設定・テンポを入力し、ノーツを置き、音源を読み込む。 */

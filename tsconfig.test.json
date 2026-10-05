@@ -4,6 +4,6 @@
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
     "types": ["vite/client", "node", "vitest/globals", "@testing-library/jest-dom"]
   },
-  "include": ["src", "e2e", "e2e-smoke"],
+  "include": ["src", "e2e", "smoke"],
   "exclude": []
 }
