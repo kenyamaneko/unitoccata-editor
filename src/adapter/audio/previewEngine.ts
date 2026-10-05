@@ -1,8 +1,7 @@
-import SignalsmithStretch, { type StretchNode } from 'signalsmith-stretch'
 import { convertTickToAudioSeconds } from '../../domain/projectInfo.ts'
 import type { ProjectInfo } from '../../domain/types.ts'
 import { logFailure } from '../../utils/logFailure.ts'
-import { buildClickSchedule, PREVIEW_SPEED } from '../../domain/previewSchedule.ts'
+import { buildClickSchedule } from '../../domain/previewSchedule.ts'
 
 /** 再生を始めるまでの猶予 (秒)。音の準備に使う。 */
 const START_LEAD_SECONDS = 0.25
@@ -20,8 +19,8 @@ const MINIMUM_ENVELOPE_GAIN = 0.0001
 
 /** 再生中のプレビュー。 */
 export interface PreviewSession {
-  /** 再生を始めてからの実際の経過秒を返す。 */
-  getElapsedPlaybackSeconds(): number
+  /** 再生を始めてからの経過秒を返す。 */
+  getElapsedSeconds(): number
   /** 再生を止め、止めた時点の経過秒を返す。 */
   stop(): number
   /** 再生を続けたまま、指定の tick から再生し直す。経過秒は 0 に戻る。 */
@@ -41,7 +40,7 @@ export interface PreviewRequest {
 }
 
 const RESUME_FAILED_MESSAGE = '音声の再生を再開できませんでした。もう一度プレビューを押してください'
-const STRETCH_FAILED_MESSAGE = `音源をピッチを保ったまま ${PREVIEW_SPEED} 倍速で再生する準備ができませんでした。音源を読み込み直してから、もう一度プレビューを押してください`
+const AUDIO_FAILED_MESSAGE = '音源を再生できませんでした。音源を読み込み直してから、もう一度プレビューを押してください'
 const CLICK_FAILED_MESSAGE =
   'クリック音を鳴らせませんでした。クリック音を OFF にするか、もう一度プレビューを押してください'
 const CLICK_STOPPED_MESSAGE =
@@ -68,11 +67,6 @@ function releaseQuietly(release: () => void): void {
   }
 }
 
-function releaseStretch(stretch: StretchNode): void {
-  releaseQuietly(() => stretch.stop())
-  releaseQuietly(() => stretch.disconnect())
-}
-
 async function resumeContext(context: AudioContext): Promise<void> {
   try {
     await context.resume()
@@ -81,63 +75,46 @@ async function resumeContext(context: AudioContext): Promise<void> {
   }
 }
 
-/** 音源の再生を、音源の startAudioSeconds 秒の位置から、baseTime (AudioContext の時刻) に始めるように予約する。 */
-function scheduleStretch(stretch: StretchNode, baseTime: number, startAudioSeconds: number): void {
-  if (startAudioSeconds >= 0) {
-    stretch.schedule({ output: baseTime, input: startAudioSeconds, rate: PREVIEW_SPEED, active: true })
-  } else {
-    stretch.schedule({
-      output: baseTime - startAudioSeconds / PREVIEW_SPEED,
-      input: 0,
-      rate: PREVIEW_SPEED,
-      active: true,
-    })
-  }
-}
-
-/** 音源があれば、ピッチを保った倍速再生の準備をして再生を予約する。失敗したら、作った分を止めて接続を解除する。 */
-async function prepareAudioPlayback(
+/**
+ * 音源の再生を、音源の startAudioSeconds 秒の位置から、baseTime (AudioContext の時刻) に始めるように予約する。
+ * startAudioSeconds が負のときは、その分だけ遅らせて、音源の先頭から始める。
+ */
+function playAudio(
   context: AudioContext,
-  audio: AudioBuffer | null,
+  audio: AudioBuffer,
+  baseTime: number,
   startAudioSeconds: number,
-): Promise<{ readonly stretch: StretchNode | null; readonly baseTime: number }> {
-  let stretch: StretchNode | null = null
+): AudioBufferSourceNode {
+  const source = context.createBufferSource()
   try {
-    if (audio !== null) {
-      stretch = await SignalsmithStretch(context)
-      const channels = Array.from({ length: audio.numberOfChannels }, (_, channel) =>
-        audio.getChannelData(channel).slice(),
-      )
-      await stretch.addBuffers(channels)
-      stretch.connect(context.destination)
+    source.buffer = audio
+    source.connect(context.destination)
+    if (startAudioSeconds >= 0) {
+      source.start(baseTime, startAudioSeconds)
+    } else {
+      source.start(baseTime - startAudioSeconds)
     }
-    const baseTime = context.currentTime + START_LEAD_SECONDS
-    if (stretch !== null) {
-      scheduleStretch(stretch, baseTime, startAudioSeconds)
-    }
-    return { stretch, baseTime }
   } catch (cause) {
-    if (stretch !== null) {
-      releaseStretch(stretch)
-    }
-    throw new Error(STRETCH_FAILED_MESSAGE, { cause })
+    releaseQuietly(() => source.disconnect())
+    throw new Error(AUDIO_FAILED_MESSAGE, { cause })
   }
+  return source
 }
 
 /**
- * プレビューの再生を始める。音源は 0.5 倍速でピッチを保って流し、
+ * プレビューの再生を始める。音源は等倍で流し、
  * メトロノームのクリック音は、再生の経過時間に合わせて正確に鳴らす。
  * 始められなければ、鳴らし始めた音を止めてから、原因ごとの文言を付けた例外にする。
  */
 export async function startPreview(request: PreviewRequest): Promise<PreviewSession> {
   const { context, audio, projectInfo, startTick } = request
   await resumeContext(context)
-  const prepared = await prepareAudioPlayback(context, audio, convertTickToAudioSeconds(projectInfo, startTick))
-  const { stretch } = prepared
-  let baseTime = prepared.baseTime
+  let baseTime = context.currentTime + START_LEAD_SECONDS
+  let audioSource =
+    audio === null ? null : playAudio(context, audio, baseTime, convertTickToAudioSeconds(projectInfo, startTick))
 
   const planClicks = (fromTick: number): number[] =>
-    request.metronomeEnabled ? buildClickSchedule(projectInfo, fromTick, PREVIEW_SPEED, request.endTick) : []
+    request.metronomeEnabled ? buildClickSchedule(projectInfo, fromTick, request.endTick) : []
   let clickSeconds = planClicks(startTick)
   const liveSources = new Set<AudioScheduledSourceNode>()
   let nextIndex = 0
@@ -161,10 +138,16 @@ export async function startPreview(request: PreviewRequest): Promise<PreviewSess
     }
     liveSources.clear()
   }
-  const stopSounds = (): void => {
-    if (stretch !== null) {
-      releaseStretch(stretch)
+  const stopAudio = (): void => {
+    if (audioSource !== null) {
+      const source = audioSource
+      releaseQuietly(() => source.stop())
+      releaseQuietly(() => source.disconnect())
+      audioSource = null
     }
+  }
+  const stopSounds = (): void => {
+    stopAudio()
     stopClicks()
   }
 
@@ -184,12 +167,12 @@ export async function startPreview(request: PreviewRequest): Promise<PreviewSess
   }, SCHEDULER_INTERVAL_MS)
 
   return {
-    getElapsedPlaybackSeconds: () => Math.max(0, context.currentTime - baseTime),
+    getElapsedSeconds: () => Math.max(0, context.currentTime - baseTime),
     stop: () => {
-      const elapsedPlaybackSeconds = Math.max(0, context.currentTime - baseTime)
+      const elapsedSeconds = Math.max(0, context.currentTime - baseTime)
       window.clearInterval(timer)
       stopSounds()
-      return elapsedPlaybackSeconds
+      return elapsedSeconds
     },
     seek: (seekTick) => {
       stopClicks()
@@ -197,12 +180,13 @@ export async function startPreview(request: PreviewRequest): Promise<PreviewSess
       clickSeconds = planClicks(seekTick)
       nextIndex = 0
       try {
-        if (stretch !== null) {
-          scheduleStretch(stretch, baseTime, convertTickToAudioSeconds(projectInfo, seekTick))
+        if (audio !== null) {
+          stopAudio()
+          audioSource = playAudio(context, audio, baseTime, convertTickToAudioSeconds(projectInfo, seekTick))
         }
       } catch (cause) {
         window.clearInterval(timer)
-        request.onFailure(new Error(STRETCH_FAILED_MESSAGE, { cause }))
+        request.onFailure(cause instanceof Error ? cause : new Error(AUDIO_FAILED_MESSAGE, { cause }))
         return
       }
       try {

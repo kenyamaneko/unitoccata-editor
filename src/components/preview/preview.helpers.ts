@@ -4,15 +4,14 @@ import type { AppDriver } from '../../test/app.tsx'
 import { getSharedState } from '../../test/sharedState.ts'
 
 const AUDIO_STATE_KEY = 'audio'
-const SECONDS_UNTIL_TICK_1920 = 2.25
+const SECONDS_BEFORE_PLAYBACK_STARTS = 0.25
+const SECONDS_UNTIL_TICK_1920 = 1.25
 const PIXELS_FOR_TICK_5000 = 600
 
 interface AudioFailureFlags {
   contextCreationFails: boolean
   resumeMode: 'succeed' | 'fail' | 'defer'
-  stretchCreationFails: boolean
-  stretchBufferTransferFails: boolean
-  stretchScheduleFails: boolean
+  audioPlaybackFails: boolean
   clickFailuresRemaining: number
 }
 
@@ -22,6 +21,10 @@ export async function advanceClock(app: AppDriver, seconds: number): Promise<voi
   expect(Date.now() - before, '時間が進んでいません (時間を進める操作が空振りしています)').toBeGreaterThanOrEqual(
     seconds * 1000,
   )
+}
+
+export async function advanceClockSincePlaybackStarted(app: AppDriver, seconds: number): Promise<void> {
+  await advanceClock(app, seconds + SECONDS_BEFORE_PLAYBACK_STARTS)
 }
 
 export async function startPreviewAndReturnToEditorAfter(app: AppDriver, seconds: number): Promise<void> {
@@ -85,8 +88,8 @@ export function expectStartFailureNotice(app: AppDriver): void {
   )
 }
 
-export async function restartPreviewAfter(app: AppDriver, seconds: number): Promise<void> {
-  await startPreviewAndReturnToEditorAfter(app, seconds)
+export async function restartPreviewAfterPlaybackStarted(app: AppDriver, seconds: number): Promise<void> {
+  await startPreviewAndReturnToEditorAfter(app, seconds + SECONDS_BEFORE_PLAYBACK_STARTS)
   await app.selectTab('プレビュー')
 }
 
@@ -127,23 +130,13 @@ export async function wheelPreviewTimes(
   }
 }
 
-export async function failResumeRequest(app: AppDriver, index: number): Promise<void> {
-  const request = app.audio.resumeRequests()[index]
-  expect(request, `${index + 1} 番目の音声再生の再開の要求がありません`).toBeDefined()
-  request?.fail()
-  await app.settle()
-  expectStartFailureNotice(app)
-}
-
 export function allowAudioFeatures(): void {
   const flags = getSharedState<AudioFailureFlags>(AUDIO_STATE_KEY, () => {
     throw new Error('音声の偽物の状態がありません。startApp を呼んでから使ってください')
   })
   flags.contextCreationFails = false
   flags.resumeMode = 'succeed'
-  flags.stretchCreationFails = false
-  flags.stretchBufferTransferFails = false
-  flags.stretchScheduleFails = false
+  flags.audioPlaybackFails = false
   flags.clickFailuresRemaining = 0
 }
 
