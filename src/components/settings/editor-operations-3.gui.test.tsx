@@ -139,41 +139,27 @@ describe('[譜面設定] レーン数', () => {
 describe('[プロジェクト情報] 小節数', () => {
   describe('小節数の入力', () => {
     describe('正常系', () => {
-      it('1 小節目 4 拍目の 3/4 拍後にノーツがあるとき、「小節数」の入力欄に 1 を入力してエンターキーを押し、タイムラインを一番上までスクロールすると、タイムラインの代替コンテンツに「スクロール位置 2 小節目 1 拍目」が出る', async () => {
-        const app = await startApp()
-        await app.loadChart([{ type: 'tap', tick: 3600, lane: 2 }])
-        await app.projectInfo.open()
-        await app.projectInfo.enterBarCount('1')
-
-        await closeProjectInfoAndScrollToTop(app)
-
-        expect(app.timeline.items()).toContain('スクロール位置 2 小節目 1 拍目')
-      })
-
-      it.each([
-        { label: '1', input: '1', scrollPosition: '2 小節目 1 拍目' },
-        { label: '1000', input: '1000', scrollPosition: '1001 小節目 1 拍目' },
-      ])(
-        '「小節数」の入力欄に $label を入力してエンターキーを押し、タイムラインを一番上までスクロールすると、タイムラインの代替コンテンツに「スクロール位置 $scrollPosition」が出る',
-        async ({ input, scrollPosition }) => {
+      it.each([{ input: '1' }, { input: '1000' }])(
+        '「小節数」の入力欄に $input を入力してエンターキーを押し、タイムラインを一番上までスクロールすると、タイムラインに描かれる小節番号の最大は、$input になる',
+        async ({ input }) => {
           const app = await startApp()
           await app.projectInfo.open()
           await app.projectInfo.enterBarCount(input)
 
           await closeProjectInfoAndScrollToTop(app)
 
-          expect(app.timeline.items()).toContain(`スクロール位置 ${scrollPosition}`)
+          expect(app.timeline.maxDrawnBarNumber()).toBe(Number(input))
         },
       )
 
-      it('「小節数」の入力欄に 100 を入力してフォーカスを外し、タイムラインを一番上までスクロールすると、タイムラインの代替コンテンツに「スクロール位置 101 小節目 1 拍目」が出る', async () => {
+      it('「小節数」の入力欄に 100 を入力してフォーカスを外し、タイムラインを一番上までスクロールすると、タイムラインに描かれる小節番号の最大は、100 になる', async () => {
         const app = await startApp()
         await app.projectInfo.open()
         await app.projectInfo.typeBarCountAndBlur('100')
 
         await closeProjectInfoAndScrollToTop(app)
 
-        expect(app.timeline.items()).toContain('スクロール位置 101 小節目 1 拍目')
+        expect(app.timeline.maxDrawnBarNumber()).toBe(100)
       })
 
       describe('「小節数」の入力欄に 1 を入力してエンターキーを押す', () => {
@@ -202,7 +188,7 @@ describe('[プロジェクト情報] 小節数', () => {
           },
         )
 
-        it('小節数が 80 で、2 小節目 1 拍目にノーツがあるとき、小節数は変わらず、タイムラインを一番上までスクロールすると、タイムラインの代替コンテンツに「スクロール位置 81 小節目 1 拍目」が出る', async () => {
+        it('小節数が 80 で、2 小節目 1 拍目にノーツがあるとき、「小節数」の入力欄に 1 を入力してエンターキーを押すと、小節数は変わらず、タイムラインを一番上までスクロールすると、タイムラインに描かれる小節番号の最大は、80 になる', async () => {
           const app = await startApp({ barCount: 80 })
           await app.loadChart([{ type: 'tap', tick: 3840, lane: 2 }])
           await app.projectInfo.open()
@@ -210,7 +196,7 @@ describe('[プロジェクト情報] 小節数', () => {
 
           await closeProjectInfoAndScrollToTop(app)
 
-          expect(app.timeline.items()).toContain('スクロール位置 81 小節目 1 拍目')
+          expect(app.timeline.maxDrawnBarNumber()).toBe(80)
         })
       })
 
@@ -250,7 +236,7 @@ describe('[プロジェクト情報] 小節数', () => {
         expect(app.projectInfo.barCountMessage()).toBeNull()
       })
 
-      it('「小節数」の入力欄に 0 を入力してエンターキーを押し、100 に直してエンターキーを押し、タイムラインを一番上までスクロールすると、タイムラインの代替コンテンツに「スクロール位置 101 小節目 1 拍目」が出る', async () => {
+      it('「小節数」の入力欄に 0 を入力してエンターキーを押し、100 に直してエンターキーを押し、タイムラインを一番上までスクロールすると、タイムラインに描かれる小節番号の最大は、100 になる', async () => {
         const app = await startApp()
         await app.projectInfo.open()
         await app.projectInfo.enterBarCount('0')
@@ -258,17 +244,17 @@ describe('[プロジェクト情報] 小節数', () => {
 
         await closeProjectInfoAndScrollToTop(app)
 
-        expect(app.timeline.items()).toContain('スクロール位置 101 小節目 1 拍目')
+        expect(app.timeline.maxDrawnBarNumber()).toBe(100)
       })
 
-      it('小節数が 80 のとき、「小節数」の入力欄に 0 を入力してエンターキーを押しても、小節数は変わらず、タイムラインを一番上までスクロールすると、タイムラインの代替コンテンツに「スクロール位置 81 小節目 1 拍目」が出る', async () => {
+      it('小節数が 80 のとき、「小節数」の入力欄に 0 を入力してエンターキーを押しても、小節数は変わらず、タイムラインを一番上までスクロールすると、タイムラインに描かれる小節番号の最大は、80 になる', async () => {
         const app = await startApp({ barCount: 80 })
         await app.projectInfo.open()
         await app.projectInfo.enterBarCount('0')
 
         await closeProjectInfoAndScrollToTop(app)
 
-        expect(app.timeline.items()).toContain('スクロール位置 81 小節目 1 拍目')
+        expect(app.timeline.maxDrawnBarNumber()).toBe(80)
       })
     })
   })
@@ -283,20 +269,6 @@ describe('[譜面設定] 起動時のレーン数', () => {
         await app.chartSettings.open()
 
         expect(app.chartSettings.laneCount()).toBe(5)
-      })
-    })
-  })
-})
-
-describe('[プロジェクト情報] 起動時の小節数', () => {
-  describe('エディタの起動', () => {
-    describe('正常系', () => {
-      it('エディタを起動して、タイムラインを一番上までスクロールすると、タイムラインの代替コンテンツに「スクロール位置 51 小節目 1 拍目」が出る', async () => {
-        const app = await startApp()
-
-        await app.scrollbar.dragThumbToTop()
-
-        expect(app.timeline.items()).toContain('スクロール位置 51 小節目 1 拍目')
       })
     })
   })

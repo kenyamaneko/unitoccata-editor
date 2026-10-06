@@ -1,6 +1,7 @@
 import {
   calculateLaneWidth,
   calculateNoteAreaLeft,
+  calculateGridTickRange,
   calculateVisibleTickRange,
   convertLaneToCenterX,
   convertTickToY,
@@ -72,6 +73,8 @@ export interface WaveformPeaks {
 /** タイムラインの描画内容。 */
 export interface TimelineScene {
   readonly viewport: TimelineViewport
+  /** グリッド・拍の線・小節番号を描く範囲の終わりの tick。譜面の終わりで、これより先には描かない。 */
+  readonly endTick: number
   readonly projectInfo: ProjectInfo
   readonly chart: Chart
   readonly selectedNoteIds: readonly string[]
@@ -137,13 +140,13 @@ function drawGridLines(ctx: CanvasRenderingContext2D, scene: TimelineScene): voi
   if (step * viewport.pixelsPerTick < MIN_LINE_SPACING_PX) {
     return
   }
-  const range = calculateVisibleTickRange(viewport)
+  const range = calculateGridTickRange(viewport, scene.endTick)
   const left = calculateNoteAreaLeft()
   const right = left + calculateLaneWidth(viewport) * viewport.laneCount
   ctx.strokeStyle = THEME.gridLine
   ctx.lineWidth = LINE_WIDTH
   ctx.beginPath()
-  for (let tick = Math.max(0, Math.ceil(range.from / step) * step); tick <= range.to; tick += step) {
+  for (let tick = Math.ceil(range.from / step) * step; tick <= range.to; tick += step) {
     const y = Math.round(convertTickToY(viewport, tick)) + HAIRLINE_OFFSET
     ctx.moveTo(left, y)
     ctx.lineTo(right, y)
@@ -153,10 +156,10 @@ function drawGridLines(ctx: CanvasRenderingContext2D, scene: TimelineScene): voi
 
 function drawBeatLines(ctx: CanvasRenderingContext2D, scene: TimelineScene): void {
   const { viewport, projectInfo } = scene
-  const range = calculateVisibleTickRange(viewport)
+  const range = calculateGridTickRange(viewport, scene.endTick)
   const left = calculateNoteAreaLeft()
   const right = left + calculateLaneWidth(viewport) * viewport.laneCount
-  for (const beat of listBeats(projectInfo, Math.max(0, range.from), range.to + 1)) {
+  for (const beat of listBeats(projectInfo, range.from, range.to + 1)) {
     const isBarStart = beat.beatInBar === 0
     const y = Math.round(convertTickToY(viewport, beat.tick)) + (isBarStart ? 0 : HAIRLINE_OFFSET)
     ctx.strokeStyle = isBarStart ? THEME.barLine : THEME.beatLine
@@ -172,12 +175,12 @@ function drawBeatLines(ctx: CanvasRenderingContext2D, scene: TimelineScene): voi
 function drawBarNumbers(ctx: CanvasRenderingContext2D, scene: TimelineScene): void {
   const { viewport, projectInfo } = scene
   const bar = getBarColumnRange()
-  const range = calculateVisibleTickRange(viewport)
+  const range = calculateGridTickRange(viewport, scene.endTick)
   ctx.font = BAR_LABEL_FONT
   ctx.fillStyle = THEME.barLabel
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  for (const beat of listBeats(projectInfo, Math.max(0, range.from), range.to + 1)) {
+  for (const beat of listBeats(projectInfo, range.from, range.to)) {
     if (beat.beatInBar === 0) {
       ctx.fillText(
         String(beat.barNumber),

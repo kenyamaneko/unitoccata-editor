@@ -1,6 +1,7 @@
 import { assertNever } from '../../utils/assertNever.ts'
 import { MAX_LANE_COUNT, MAX_NOTE_COUNT, MIN_LANE_COUNT } from '../../domain/constants.ts'
 import { locateNoteProblem, sortNotes } from '../../domain/notes.ts'
+import { BAR_COUNT_SETTING } from '../../domain/numberSettings.ts'
 import type { Chart, ChartPoint, FlickDirection, LongEnd, Note, ProjectInfo } from '../../domain/types.ts'
 import { FormatError } from './formatError.ts'
 import { assertSupportedFormatVersion, FILE_FORMAT_VERSION } from './formatVersion.ts'
@@ -21,6 +22,8 @@ function readDirection(value: unknown, label: string): FlickDirection {
 export interface LoadedChart {
   readonly chart: Chart
   readonly laneCount: number
+  /** 譜面ファイルの小節数。譜面ファイルに小節数がなければ null。 */
+  readonly barCount: number | null
   readonly projectInfo: ProjectInfo
 }
 
@@ -30,6 +33,14 @@ function readLaneCount(value: unknown): number {
     throw new FormatError(`レーン数は ${MIN_LANE_COUNT} 以上 ${MAX_LANE_COUNT} 以下にしてください`)
   }
   return laneCount
+}
+
+function readBarCount(value: unknown): number {
+  const barCount = readInteger(readNumber(value, '小節数'), '小節数')
+  if (!BAR_COUNT_SETTING.isValid(barCount)) {
+    throw new FormatError(`${BAR_COUNT_SETTING.name}は ${BAR_COUNT_SETTING.requirementText}にしてください`)
+  }
+  return barCount
 }
 
 function readLane(value: unknown, label: string, laneCount: number): number {
@@ -89,13 +100,14 @@ function readNote(value: unknown, noteLabel: string, id: string, laneCount: numb
 }
 
 /**
- * 譜面ファイルを読み、仕様どおりか検証して Chart とレーン数にする。ノーツは位置の順、同じ位置ならレーンの順に並べ替える。
+ * 譜面ファイルを読み、仕様どおりか検証して Chart・レーン数・小節数・プロジェクト情報にする。小節数は省略できる。省略されていれば null にする。ノーツは位置の順、同じ位置ならレーンの順に並べ替える。
  * 仕様に反していれば FormatError を投げる。id は createId で採番する。
  */
 export function parseChartJson(json: unknown, createId: () => string): LoadedChart {
   const object = readObject(json, 'ファイルの内容')
   assertSupportedFormatVersion(object)
   const laneCount = readLaneCount(object.laneCount)
+  const barCount = object.barCount === undefined ? null : readBarCount(object.barCount)
   const projectInfo = readProjectInfoFields(object)
   const noteValues = readArray(object.notes, 'ノーツ')
   if (noteValues.length > MAX_NOTE_COUNT) {
@@ -105,7 +117,7 @@ export function parseChartJson(json: unknown, createId: () => string): LoadedCha
   const notes = sortNotes(notesInFileOrder)
   const found = locateNoteProblem(notes, null)
   if (found === null) {
-    return { chart: { notes }, laneCount, projectInfo }
+    return { chart: { notes }, laneCount, barCount, projectInfo }
   }
   const order = notesInFileOrder.findIndex((note) => note.tick === found.tick && note.lane === found.lane) + 1
   switch (found.problem) {
@@ -144,13 +156,14 @@ export function serializeNotes(chart: Chart): unknown[] {
   return chart.notes.map(serializeNote)
 }
 
-/** Chart、レーン数、プロジェクト情報を、書き出す譜面ファイルの内容にする。小節数は含めない。 */
-export function serializeChart(chart: Chart, laneCount: number, projectInfo: ProjectInfo): unknown {
+/** Chart、レーン数、小節数、プロジェクト情報を、書き出す譜面ファイルの内容にする。 */
+export function serializeChart(chart: Chart, laneCount: number, barCount: number, projectInfo: ProjectInfo): unknown {
   const { offsetMs, tempo, meter } = serializeProjectInfoFields(projectInfo)
   return {
     formatVersion: FILE_FORMAT_VERSION,
     offsetMs,
     laneCount,
+    barCount,
     tempo,
     meter,
     notes: serializeNotes(chart),

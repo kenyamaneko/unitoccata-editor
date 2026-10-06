@@ -36,7 +36,7 @@ import {
 import { placeClipboardNotes } from '../../domain/chartEditing.ts'
 import { calculateGridStepTicks, snapTickToGrid } from '../../domain/grid.ts'
 import type { ChartPoint } from '../../domain/types.ts'
-import { calculateScrollLimit } from '../../domain/scrollbar.ts'
+import { calculateChartEndTick } from '../../domain/scrollbar.ts'
 import { parseBpmText, sanitizeBpmInput } from '../../domain/bpmText.ts'
 import { formatMeterText, parseMeterText } from '../../domain/meterText.ts'
 import { describePosition } from '../../domain/positionText.ts'
@@ -134,6 +134,7 @@ export function TimelineCanvas() {
 
   useEffect(() => {
     sizeRef.current = size
+    useEditorStore.getState().setTimelineHeight(size.height)
   }, [size])
   const [editor, setEditor] = useState<ValueEditor | null>(null)
 
@@ -162,6 +163,7 @@ export function TimelineCanvas() {
     context.setTransform(ratio, 0, 0, ratio, 0, 0)
     drawTimeline(context, {
       viewport: readViewport(),
+      endTick: calculateChartEndTick(state),
       projectInfo: state.projectInfo,
       chart: state.chart,
       selectedNoteIds: state.selectedNoteIds,
@@ -293,7 +295,7 @@ export function TimelineCanvas() {
         readViewport(),
         state.gridDivision,
         clampToTimeline(pointer),
-        calculateScrollLimit(state),
+        calculateChartEndTick(state),
       )
       overlayRef.current =
         end === null
@@ -346,7 +348,7 @@ export function TimelineCanvas() {
     }
     const state = useEditorStore.getState()
     if (state.isPasteTargeting) {
-      const target = resolveGridPoint(viewport, state.gridDivision, position, calculateScrollLimit(state))
+      const target = resolveGridPoint(viewport, state.gridDivision, position, calculateChartEndTick(state))
       if (target !== null) {
         state.pasteAt(target)
       }
@@ -365,7 +367,7 @@ export function TimelineCanvas() {
             : { kind: 'empty' },
       shiftKey: event.shiftKey,
       startPoint:
-        hit === null ? resolveGridPoint(viewport, state.gridDivision, position, calculateScrollLimit(state)) : null,
+        hit === null ? resolveGridPoint(viewport, state.gridDivision, position, calculateChartEndTick(state)) : null,
     }
     pointerRef.current = position
     if (!event.shiftKey) {
@@ -419,7 +421,7 @@ export function TimelineCanvas() {
       viewport: readViewport(),
       gridDivision: state.gridDivision,
       startPoint: drag.startPoint,
-      maxTick: calculateScrollLimit(state),
+      maxTick: calculateChartEndTick(state),
     })
     if (intent !== null) {
       applyIntent(intent)

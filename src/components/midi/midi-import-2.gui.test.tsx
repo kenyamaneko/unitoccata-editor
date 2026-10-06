@@ -838,23 +838,23 @@ describe('[MIDI 取り込み] 小節数の取り込み', () => {
             given: 'MIDI の tick 96000 にノートがあり',
             barCount: 50,
             tick: 96000,
-            scrollPosition: '52 小節目 1 拍目',
+            maxBarNumber: 51,
           },
           {
             given: 'MIDI の tick 115199 にノートがあり',
             barCount: 60,
             tick: 115199,
-            scrollPosition: '61 小節目 1 拍目',
+            maxBarNumber: 60,
           },
         ])(
-          '$given、小節数が $barCount のとき、タイムラインの代替コンテンツに「スクロール位置 $scrollPosition」が出る',
-          async ({ barCount, tick, scrollPosition }) => {
+          '$given、小節数が $barCount のとき、タイムラインに描かれる小節番号の最大は、$maxBarNumber になる',
+          async ({ barCount, tick, maxBarNumber }) => {
             const app = await openDialogWith(createSingleTapMidiFile(tick), { barCount })
             await importMidi(app)
 
             await app.scrollbar.dragThumbToTop()
 
-            expect(app.timeline.items()).toContain(`スクロール位置 ${scrollPosition}`)
+            expect(app.timeline.maxDrawnBarNumber()).toBe(maxBarNumber)
           },
         )
       })

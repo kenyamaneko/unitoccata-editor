@@ -264,6 +264,37 @@ describe('[譜面ファイル読み込み] 譜面ファイルに合わせた小�
   })
 })
 
+describe('[譜面ファイル読み込み] 譜面ファイルの小節数', () => {
+  describe('「ファイル」メニューの「インポート」の「譜面」で譜面ファイルを選んで、「プロジェクト情報」ダイアログを開く', () => {
+    describe('正常系', () => {
+      describe('小節数が 50 のエディタのとき', () => {
+        it.each([{ fileBarCount: 1 }, { fileBarCount: 1000 }])(
+          'barCount が $fileBarCount の譜面ファイルを選ぶと、「小節数」の入力欄は、$fileBarCount になる',
+          async ({ fileBarCount }) => {
+            const app = await startApp()
+
+            await app.files.chooseChart(createChartFile('chart.json', [], 5, { barCount: fileBarCount }))
+            await app.projectInfo.open()
+
+            expect(app.projectInfo.barCountInput()).toHaveDisplayValue(String(fileBarCount))
+          },
+        )
+
+        it('barCount が 2 で、3 小節目 1 拍目にタップノーツがある譜面ファイルを選ぶと、「小節数」の入力欄は、3 になる', async () => {
+          const app = await startApp()
+
+          await app.files.chooseChart(
+            createChartFile('chart.json', [{ type: 'tap', tick: 7680, lane: 0 }], 5, { barCount: 2 }),
+          )
+          await app.projectInfo.open()
+
+          expect(app.projectInfo.barCountInput()).toHaveDisplayValue('3')
+        })
+      })
+    })
+  })
+})
+
 describe('[譜面ファイル読み込み] 不正なファイルのエラー表示', () => {
   describe('異常系', () => {
     describe('「ファイル」メニューの「インポート」の「譜面」でのファイル選択', () => {
@@ -502,19 +533,12 @@ describe('[譜面書き出し] 書き出されるファイルの内容', () => {
         expect(await file.json()).toMatchObject({ meter: [{ tick: 0, num: 3, den: 4 }] })
       })
 
-      it('小節数が 60 のとき、ダウンロードされた譜面ファイルの項目は、formatVersion、offsetMs、laneCount、tempo、meter、notes だけになる', async () => {
+      it('小節数が 60 のとき、ダウンロードされた譜面ファイルの barCount は、60 になる', async () => {
         const app = await startApp({ barCount: 60 })
 
         const file = await app.downloads.exportChartAs('テスト曲', '譜面1')
 
-        expect(Object.keys((await file.json()) as object).toSorted()).toEqual([
-          'formatVersion',
-          'laneCount',
-          'meter',
-          'notes',
-          'offsetMs',
-          'tempo',
-        ])
+        expect(await file.json()).toMatchObject({ barCount: 60 })
       })
     })
   })

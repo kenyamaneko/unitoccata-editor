@@ -1,6 +1,11 @@
 import { calculateBarsEndTick, calculateRequiredBarCount } from './projectInfo.ts'
 import type { Chart, ProjectInfo } from './types.ts'
-import { MIN_SCROLL_TICK, SCROLLBAR_MIN_THUMB_HEIGHT } from '../constants/canvas.ts'
+import {
+  MIN_SCROLL_TICK,
+  SCROLLBAR_MIN_THUMB_HEIGHT,
+  TIMELINE_BOTTOM_MARGIN,
+  TIMELINE_TOP_MARGIN,
+} from '../constants/canvas.ts'
 
 /** スクロールバーが表す、スクロール位置 (タイムラインの下端にある tick) の範囲。 */
 export interface ScrollRange {
@@ -23,20 +28,35 @@ export interface ScrollLimitInput {
 }
 
 /**
- * スクロール位置の上限を返す。設定した小節数の終わりの tick。
+ * 譜面の終わりの tick を返す。設定した小節数の終わり。
  * ノーツ、テンポ変化点、拍子変化点がそれより先にあるときは、それらを全て含む最小の小節の終わりまで広げる。
  */
-export function calculateScrollLimit(input: ScrollLimitInput): number {
+export function calculateChartEndTick(input: ScrollLimitInput): number {
   const { projectInfo, chart, barCount } = input
   return calculateBarsEndTick(projectInfo, Math.max(barCount, calculateRequiredBarCount(projectInfo, chart)))
+}
+
+/** タイムラインに見える範囲の長さ (tick) を返す。タイムラインの高さ (px) から、下端と上端の余白を除く。 */
+export function calculateVisibleTicks(timelineHeight: number, pixelsPerTick: number): number {
+  return Math.max(0, timelineHeight - TIMELINE_BOTTOM_MARGIN - TIMELINE_TOP_MARGIN) / pixelsPerTick
+}
+
+/**
+ * スクロール位置 (タイムラインの下端にある tick) の上限を返す。譜面の終わりが、タイムラインの上端の余白の下に着く位置で、
+ * 譜面の終わりより先は、上端の余白の分しか見えない。譜面が見える範囲 (visibleTicks) に収まるときは、スクロール位置の下限。
+ */
+export function calculateScrollLimit(input: ScrollLimitInput, visibleTicks: number): number {
+  return Math.max(MIN_SCROLL_TICK, calculateChartEndTick(input) - visibleTicks)
 }
 
 /**
  * スクロールバーの範囲を返す。下限はスクロール位置の下限、上限は calculateScrollLimit の値。
  * スクロール位置が上限を超えているときは、スクロール位置までを範囲にする。
  */
-export function calculateScrollRange(input: ScrollLimitInput & { readonly scrollTick: number }): ScrollRange {
-  return { min: MIN_SCROLL_TICK, max: Math.max(calculateScrollLimit(input), input.scrollTick) }
+export function calculateScrollRange(
+  input: ScrollLimitInput & { readonly scrollTick: number; readonly visibleTicks: number },
+): ScrollRange {
+  return { min: MIN_SCROLL_TICK, max: Math.max(calculateScrollLimit(input, input.visibleTicks), input.scrollTick) }
 }
 
 /**
@@ -51,7 +71,10 @@ export function calculateThumb(
 ): ScrollThumb {
   const ratio = visibleTicks / (range.max - range.min + visibleTicks)
   const height = Math.min(trackHeight, Math.max(SCROLLBAR_MIN_THUMB_HEIGHT, trackHeight * ratio))
-  const fraction = (Math.min(range.max, Math.max(range.min, scrollTick)) - range.min) / (range.max - range.min)
+  const fraction =
+    range.max === range.min
+      ? 0
+      : (Math.min(range.max, Math.max(range.min, scrollTick)) - range.min) / (range.max - range.min)
   return { top: (trackHeight - height) * (1 - fraction), height }
 }
 
