@@ -2,6 +2,7 @@
   "formatVersion": 1,
   "offsetMs": 250,
   "laneCount": 6,
+  "barCount": 12,
   "tempo": [{ "tick": 0, "bpm": 150 }],
   "meter": [{ "tick": 0, "num": 4, "den": 4 }],
   "notes": [

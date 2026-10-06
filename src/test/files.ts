@@ -43,6 +43,7 @@ export type ChartFileNote =
     }
 
 export interface ChartFileProjectInfo {
+  readonly barCount?: number
   readonly offsetMs?: number
   readonly tempo?: readonly { readonly tick: number; readonly bpm: number }[]
   readonly meter?: readonly { readonly tick: number; readonly num: number; readonly den: number }[]
@@ -59,6 +60,7 @@ export function buildChartJson(
     laneCount,
     tempo: projectInfo.tempo ?? [{ tick: 0, bpm: DEFAULT_BPM }],
     meter: projectInfo.meter ?? [{ tick: 0, num: 4, den: 4 }],
+    ...(projectInfo.barCount === undefined ? {} : { barCount: projectInfo.barCount }),
     notes,
   }
 }

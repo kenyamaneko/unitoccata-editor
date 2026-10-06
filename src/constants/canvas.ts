@@ -13,6 +13,9 @@ export const NOTE_AREA_RIGHT_MARGIN = 16
 /** タイムラインの下端の余白 (px)。先頭の位置をブラウザの下端から離して、操作しやすくする。 */
 export const TIMELINE_BOTTOM_MARGIN = 32
 
+/** タイムラインの上端の余白 (px)。譜面の終わりまでスクロールしたとき、終わりをブラウザの上端から離して、操作しやすくする。 */
+export const TIMELINE_TOP_MARGIN = 32
+
 /** 1 tick あたりの高さ (px) の初期値。 */
 export const DEFAULT_PIXELS_PER_TICK = 0.12
 

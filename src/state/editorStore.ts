@@ -53,7 +53,7 @@ import {
   MIN_PIXELS_PER_TICK,
   MIN_SCROLL_TICK,
 } from '../constants/canvas.ts'
-import { calculateScrollLimit } from '../domain/scrollbar.ts'
+import { calculateChartEndTick, calculateScrollLimit, calculateVisibleTicks } from '../domain/scrollbar.ts'
 import { BAR_COUNT_SETTING, LANE_COUNT_SETTING } from '../domain/numberSettings.ts'
 
 /** 読み込んだ音源。波形はピークの並びで持つ。 */
@@ -145,6 +145,8 @@ export interface EditorState {
   /** プレビューの再生位置 (tick)。エディタのスクロール位置とは独立で、プレビューを止めたとき、止めた位置になる。 */
   readonly previewTick: number
   readonly pixelsPerTick: number
+  /** タイムラインの高さ (px)。スクロールの上限を、タイムラインに見える範囲から決めるために持つ。 */
+  readonly timelineHeight: number
   readonly mode: EditorMode
   readonly notice: Notice | null
   readonly metronomeEnabled: boolean
@@ -221,7 +223,9 @@ export interface EditorActions {
   setCloudBaseline(baseline: { readonly projectId: string; readonly updatedAt: number }): void
   setLoadingAudio(isLoading: boolean): void
   setDialogOpen(isOpen: boolean): void
-  loadChart(chart: Chart, laneCount: number, projectInfo: ProjectInfo): void
+  setTimelineHeight(height: number): void
+  /** 譜面ファイルの内容を読み込む。barCount が null (小節数がない譜面ファイル) のときは、いまの小節数のまま、収まらなければ広げる。 */
+  loadChart(chart: Chart, laneCount: number, barCount: number | null, projectInfo: ProjectInfo): void
   openCloudChart(opened: OpenedCloudChart): void
   /** MIDI から取り込んだ譜面を反映する。imported のテンポ・拍子は、取り込む場合だけ値を渡し (null なら、いまの値のまま)、オフセットは変えない。 */
   applyMidiImport(chart: Chart, imported: MidiImportedProjectInfo): void
@@ -300,6 +304,13 @@ export const useEditorStore = create<EditorState & EditorActions>()((set, get) =
   }
 
   /** 読み込む譜面とプロジェクト情報が、いまの小節数に収まらないとき、収まるように小節数を広げる状態の更新を返す。 */
+  /** patch を反映した状態でのスクロール位置の上限に、スクロール位置が収まるようにする状態の更新を返す。 */
+  const clampScrollTickFor = (patch: Partial<EditorState>): Partial<EditorState> => {
+    const next = { ...get(), ...patch }
+    const limit = calculateScrollLimit(next, calculateVisibleTicks(next.timelineHeight, next.pixelsPerTick))
+    return { scrollTick: clampScroll(next.scrollTick, limit) }
+  }
+
   const expandBarCountFor = (projectInfo: ProjectInfo, chart: Chart): Partial<EditorState> => {
     const current = get().barCount
     const expanded = expandBarCount(current, projectInfo, chart)
@@ -322,6 +333,7 @@ export const useEditorStore = create<EditorState & EditorActions>()((set, get) =
     scrollTick: MIN_SCROLL_TICK,
     previewTick: 0,
     pixelsPerTick: DEFAULT_PIXELS_PER_TICK,
+    timelineHeight: 0,
     mode: 'editor',
     notice: null,
     metronomeEnabled: false,
@@ -533,20 +545,25 @@ export const useEditorStore = create<EditorState & EditorActions>()((set, get) =
         })
         return
       }
-      set({ barCount })
+      set({ barCount, ...clampScrollTickFor({ barCount }) })
     },
     scrollBy(deltaTick) {
-      const { scrollTick } = get()
-      set({ scrollTick: clampScroll(scrollTick + deltaTick, Math.max(calculateScrollLimit(get()), scrollTick)) })
+      const state = get()
+      const limit = calculateScrollLimit(state, calculateVisibleTicks(state.timelineHeight, state.pixelsPerTick))
+      set({ scrollTick: clampScroll(state.scrollTick + deltaTick, Math.max(limit, state.scrollTick)) })
     },
     zoomBy(factor) {
-      set({ pixelsPerTick: Math.min(MAX_PIXELS_PER_TICK, Math.max(MIN_PIXELS_PER_TICK, get().pixelsPerTick * factor)) })
+      const pixelsPerTick = Math.min(MAX_PIXELS_PER_TICK, Math.max(MIN_PIXELS_PER_TICK, get().pixelsPerTick * factor))
+      set({ pixelsPerTick, ...clampScrollTickFor({ pixelsPerTick }) })
     },
     setScrollTick(tick) {
-      set({ scrollTick: clampScroll(tick, calculateScrollLimit(get())) })
+      set(clampScrollTickFor({ scrollTick: tick }))
     },
     setPreviewTick(tick) {
-      set({ previewTick: clampScroll(tick, calculateScrollLimit(get())) })
+      set({ previewTick: clampScroll(tick, calculateChartEndTick(get())) })
+    },
+    setTimelineHeight(height) {
+      set({ timelineHeight: height, ...clampScrollTickFor({ timelineHeight: height }) })
     },
     setMode(mode) {
       set({ mode, isPasteTargeting: false })
@@ -593,20 +610,32 @@ export const useEditorStore = create<EditorState & EditorActions>()((set, get) =
     setDialogOpen(isOpen) {
       set({ isDialogOpen: isOpen })
     },
-    loadChart(chart, laneCount, projectInfo) {
-      commit({ chart, projectInfo }, { selectedNoteIds: [], laneCount, ...expandBarCountFor(projectInfo, chart) })
+    loadChart(chart, laneCount, barCount, projectInfo) {
+      const loaded: Partial<EditorState> = {
+        chart,
+        projectInfo,
+        selectedNoteIds: [],
+        laneCount,
+        ...(barCount === null
+          ? expandBarCountFor(projectInfo, chart)
+          : { barCount: expandBarCount(barCount, projectInfo, chart) }),
+      }
+      commit({ chart, projectInfo }, { ...loaded, ...clampScrollTickFor(loaded) })
     },
     openCloudChart(opened) {
+      const openedState: Partial<EditorState> = {
+        chart: opened.chart,
+        projectInfo: opened.projectInfo,
+        selectedNoteIds: [],
+        songName: opened.songName,
+        cloudBaseline: { projectId: opened.projectId, updatedAt: opened.updatedAt },
+        chartName: opened.chartName,
+        laneCount: opened.laneCount,
+        barCount: expandBarCount(opened.barCount, opened.projectInfo, opened.chart),
+      }
       commit(
         { chart: opened.chart, projectInfo: opened.projectInfo },
-        {
-          selectedNoteIds: [],
-          songName: opened.songName,
-          cloudBaseline: { projectId: opened.projectId, updatedAt: opened.updatedAt },
-          chartName: opened.chartName,
-          laneCount: opened.laneCount,
-          barCount: expandBarCount(opened.barCount, opened.projectInfo, opened.chart),
-        },
+        { ...openedState, ...clampScrollTickFor(openedState) },
       )
     },
     applyMidiImport(chart, imported) {

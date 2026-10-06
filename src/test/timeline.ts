@@ -1,6 +1,7 @@
 import { fireEvent } from '@testing-library/react'
 import type { UserEvent } from '@testing-library/user-event'
 import { expect } from 'vitest'
+import { readLastFrameIntegers } from './browserStubs.ts'
 import { failWith } from './failures.ts'
 import {
   convertLaneToCenterX,
@@ -113,6 +114,10 @@ export interface TimelineDriver extends TimelineOperations {
   items(): string[]
   scrollPosition(): string
   gridStepHeight(): number
+  /** タイムラインの最後に描かれたフレームに、小節番号として描かれた整数を、描かれた順に返す。 */
+  drawnBarNumbers(): number[]
+  /** タイムラインに描かれた小節番号の最大。何も描かれていないときは、例外になる。 */
+  maxDrawnBarNumber(): number
 }
 
 export interface TimelineContext {
@@ -195,6 +200,7 @@ export function createTimelineDriver(context: TimelineContext): TimelineDriver {
       failWith(new Error(`タイムラインの代替コンテンツに「${prefix}」で始まる項目がありません`))
     return found.textContent
   }
+  const drawnBarNumbers = (): number[] => [...readLastFrameIntegers(canvas())]
   const createOperations = (gate: Gate): TimelineOperations => ({
     click: (position) =>
       gate(() => user.pointer({ keys: '[MouseLeft]', target: canvas(), coords: coordsOf(position) })),
@@ -237,5 +243,9 @@ export function createTimelineDriver(context: TimelineContext): TimelineDriver {
     items: () => [...canvas().querySelectorAll(':scope > p')].map((paragraph) => paragraph.textContent),
     scrollPosition: () => findAlternativeText('スクロール位置').replace(/^スクロール位置 /, ''),
     gridStepHeight: () => Number(/1 マスの高さ ([\d.]+) px$/.exec(findAlternativeText('グリッド分割'))?.[1]),
+    drawnBarNumbers,
+    maxDrawnBarNumber: () =>
+      drawnBarNumbers().toSorted((a, b) => b - a)[0] ??
+      failWith(new Error('タイムラインに、小節番号が描かれていません')),
   }
 }

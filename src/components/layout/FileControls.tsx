@@ -101,7 +101,7 @@ export function FileControls({
     }
     downloadJson(
       createChartFileName(store.chartName, store.songName),
-      serializeChart(store.chart, store.laneCount, store.projectInfo),
+      serializeChart(store.chart, store.laneCount, store.barCount, store.projectInfo),
     )
   }
 
@@ -138,8 +138,8 @@ export function FileControls({
         accept={JSON_FILE_ACCEPT}
         onFile={(file) =>
           void loadJson(async () => {
-            const { chart, laneCount, projectInfo } = await readChartFile(file, createNoteId)
-            store.loadChart(chart, laneCount, projectInfo)
+            const { chart, laneCount, barCount, projectInfo } = await readChartFile(file, createNoteId)
+            store.loadChart(chart, laneCount, barCount, projectInfo)
           })
         }
       />

@@ -79,6 +79,18 @@ export function calculateVisibleTickRange(viewport: TimelineViewport): { readonl
   return { from: convertYToTick(viewport, viewport.height), to: convertYToTick(viewport, 0) }
 }
 
+/**
+ * グリッド・拍の線・小節番号を描く tick の範囲を返す。画面に見える範囲のうち、先頭 (tick 0) から譜面の終わり (endTick) まで。
+ * 譜面の終わりより先は、ノーツを置けないため、描かない。
+ */
+export function calculateGridTickRange(
+  viewport: TimelineViewport,
+  endTick: number,
+): { readonly from: number; readonly to: number } {
+  const visible = calculateVisibleTickRange(viewport)
+  return { from: Math.max(0, visible.from), to: Math.min(visible.to, endTick) }
+}
+
 /** テンポ列の x 座標の範囲を返す。 */
 export function getTempoColumnRange(): { readonly left: number; readonly right: number } {
   return { left: 0, right: TEMPO_LANE_WIDTH }

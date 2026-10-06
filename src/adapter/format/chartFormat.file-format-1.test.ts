@@ -511,6 +511,20 @@ describe('[譜面ファイル読み込み] レーン数', () => {
   })
 })
 
+describe('[譜面ファイル読み込み] 小節数', () => {
+  describe('譜面ファイルの読み込み', () => {
+    describe('異常系', () => {
+      it.each([
+        ['barCount が 12.5 のとき', '小節数は整数にしてください', chartWith({ barCount: 12.5 })],
+        ['barCount が 0 のとき', '小節数は 1 以上 1000 以下の整数にしてください', chartWith({ barCount: 0 })],
+        ['barCount が 1001 のとき', '小節数は 1 以上 1000 以下の整数にしてください', chartWith({ barCount: 1001 })],
+      ])('%s、エラーメッセージに「%s」を含む', (_when, message, json) => {
+        expectParseError(json, message)
+      })
+    })
+  })
+})
+
 describe('[譜面ファイル読み込み] 0 未満の tick・レーンを持つ点', () => {
   describe('譜面ファイルの読み込み', () => {
     describe('異常系', () => {
@@ -542,13 +556,21 @@ describe('[譜面ファイル読み込み] 0 未満の tick・レーンを持つ
   })
 })
 
-describe('[譜面ファイル読み込み] ファイルの版', () => {
+describe('[譜面ファイル読み込み] ファイルのバージョン', () => {
   describe('譜面ファイルの読み込み', () => {
     describe('異常系', () => {
       it.each([
-        ['ファイルの版がないとき', 'ファイルの版は整数にしてください', chartWithout('formatVersion')],
-        ['ファイルの版が 0 のとき', 'ファイルの版 0 には対応していません', chartWith({ formatVersion: 0 })],
-        ['ファイルの版が 2 のとき', 'ファイルの版 2 には対応していません', chartWith({ formatVersion: 2 })],
+        ['ファイルのバージョンがないとき', 'ファイルのバージョンは整数にしてください', chartWithout('formatVersion')],
+        [
+          'ファイルのバージョンが 0 のとき',
+          'ファイルのバージョン 0 には対応していません',
+          chartWith({ formatVersion: 0 }),
+        ],
+        [
+          'ファイルのバージョンが 2 のとき',
+          'ファイルのバージョン 2 には対応していません',
+          chartWith({ formatVersion: 2 }),
+        ],
       ])('%s、エラーメッセージに「%s」を含む', (_when, message, json) => {
         expectParseError(json, message)
       })

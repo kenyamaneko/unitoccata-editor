@@ -3,6 +3,7 @@ import { SCROLLBAR_WIDTH } from '../../constants/canvas.ts'
 import {
   calculateScrollRange,
   calculateThumb,
+  calculateVisibleTicks,
   convertThumbTopToTick,
   type ScrollRange,
 } from '../../domain/scrollbar.ts'
@@ -24,15 +25,17 @@ export function TimelineScrollbar() {
   const [drag, setDrag] = useState<ScrollDrag | null>(null)
   const scrollTick = useEditorStore((state) => state.scrollTick)
   const pixelsPerTick = useEditorStore((state) => state.pixelsPerTick)
+  const timelineHeight = useEditorStore((state) => state.timelineHeight)
   const projectInfo = useEditorStore((state) => state.projectInfo)
   const chart = useEditorStore((state) => state.chart)
   const barCount = useEditorStore((state) => state.barCount)
+  const visibleTicks = calculateVisibleTicks(timelineHeight, pixelsPerTick)
   const liveRange = useMemo(
-    () => calculateScrollRange({ projectInfo, chart, barCount, scrollTick }),
-    [projectInfo, chart, barCount, scrollTick],
+    () => calculateScrollRange({ projectInfo, chart, barCount, scrollTick, visibleTicks }),
+    [projectInfo, chart, barCount, scrollTick, visibleTicks],
   )
   const range = drag?.range ?? liveRange
-  const thumb = calculateThumb(range, scrollTick, trackHeight / pixelsPerTick, trackHeight)
+  const thumb = calculateThumb(range, scrollTick, visibleTicks, trackHeight)
 
   const readTrackY = (event: React.PointerEvent<HTMLDivElement>): number =>
     event.clientY - event.currentTarget.getBoundingClientRect().top

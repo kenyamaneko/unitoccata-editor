@@ -24,7 +24,9 @@ import {
   startWithTwoPlacedTaps,
   startWithTwoTaps,
   startWithUpFlick,
+  wheelUpTimes,
   zoomInWithCtrlWheel,
+  zoomOutToMinimumWithCtrlWheel,
 } from './editor-operations-2.helpers.ts'
 import { at, tempoColumnAt } from '../../test/timeline.ts'
 
@@ -843,8 +845,8 @@ describe('[タイムラインの表示] タイムライン', () => {
           expect(app.timeline.items()).toContain('スクロール位置 1 小節目 1 拍目')
         })
 
-        it('小節数が 1 で、スクロール位置が 1 小節目 1 拍目のとき、ホイールを上へ 100 ピクセル分 4 回回すと、タイムラインの代替コンテンツに「スクロール位置 1 小節目 4 拍目の 151/320 拍後」が出る', async () => {
-          const app = await startApp({ barCount: 1 })
+        it('小節数が 3 で、スクロール位置が 1 小節目 1 拍目のとき、ホイールを上へ 100 ピクセル分 4 回回すと、タイムラインの代替コンテンツに「スクロール位置 1 小節目 4 拍目の 151/320 拍後」が出る', async () => {
+          const app = await startApp({ barCount: 3 })
 
           await app.timeline.wheel('up', { pixels: 100 })
           await app.timeline.wheel('up', { pixels: 100 })
@@ -856,12 +858,12 @@ describe('[タイムラインの表示] タイムライン', () => {
       })
 
       describe('タイムラインの右端のスクロールバーのつまみのドラッグ', () => {
-        it('小節数が 50 のとき、つまみを一番上までドラッグすると、タイムラインの代替コンテンツに「スクロール位置 51 小節目 1 拍目」が出る', async () => {
+        it('小節数が 50 のとき、つまみを一番上までドラッグすると、タイムラインに描かれる小節番号の最大は、50 になる', async () => {
           const app = await startApp({ barCount: 50 })
 
           await app.scrollbar.dragThumbToTop()
 
-          expect(app.timeline.items()).toContain('スクロール位置 51 小節目 1 拍目')
+          expect(app.timeline.maxDrawnBarNumber()).toBe(50)
         })
 
         it('ホイールを上へ 100 ピクセル分回したあと、つまみを一番下までドラッグすると、タイムラインの代替コンテンツに「スクロール位置 1 小節目 1 拍目」が出る', async () => {
@@ -873,29 +875,14 @@ describe('[タイムラインの表示] タイムライン', () => {
 
           expect(app.timeline.items()).toContain('スクロール位置 1 小節目 1 拍目')
         })
-
-        it.each([
-          { tapTick: 191760, tapAt: '50 小節目 4 拍目の 3/4 拍後・レーン 2', scrollPosition: '51 小節目 1 拍目' },
-          { tapTick: 192000, tapAt: '51 小節目 1 拍目・レーン 2', scrollPosition: '52 小節目 1 拍目' },
-        ])(
-          '小節数が 50 で、$tapAt にタップノーツがあるとき、つまみを一番上までドラッグすると、タイムラインの代替コンテンツに「スクロール位置 $scrollPosition」が出る',
-          async ({ tapTick, scrollPosition }) => {
-            const app = await startApp({ barCount: 50 })
-            await app.loadChart([{ type: 'tap', tick: tapTick, lane: 2 }])
-
-            await app.scrollbar.dragThumbToTop()
-
-            expect(app.timeline.items()).toContain(`スクロール位置 ${scrollPosition}`)
-          },
-        )
       })
 
-      it('小節数が 50 のとき、スクロールバーの帯の一番上をクリックすると、タイムラインの代替コンテンツに「スクロール位置 51 小節目 1 拍目」が出る', async () => {
+      it('小節数が 50 のとき、スクロールバーの帯の一番上をクリックすると、タイムラインに描かれる小節番号の最大は、50 になる', async () => {
         const app = await startApp({ barCount: 50 })
 
         await app.scrollbar.clickTrackTop()
 
-        expect(app.timeline.items()).toContain('スクロール位置 51 小節目 1 拍目')
+        expect(app.timeline.maxDrawnBarNumber()).toBe(50)
       })
 
       it('スクロール位置が 1 小節目 1 拍目のとき、ホイールを下へ 100 ピクセル分回しても、1 小節目 1 拍目より先へは進まず、タイムラインの代替コンテンツに「スクロール位置 1 小節目 1 拍目」が出たままになる', async () => {
@@ -906,16 +893,20 @@ describe('[タイムラインの表示] タイムライン', () => {
         expect(app.timeline.items()).toContain('スクロール位置 1 小節目 1 拍目')
       })
 
-      it('小節数が 1 で、スクロール位置が 1 小節目 1 拍目のとき、ホイールを上へ 100 ピクセル分 5 回回しても、小節数 1 の末尾の 2 小節目 1 拍目より先へは進まず、タイムラインの代替コンテンツに「スクロール位置 2 小節目 1 拍目」が出る', async () => {
+      it('小節数が 2 で、スクロール位置が 1 小節目 1 拍目のとき、ホイールを上へ 100 ピクセル分 20 回回しても、スクロールの上限より先へは進まず、タイムラインに描かれる小節番号の最大は、2 になる', async () => {
+        const app = await startApp({ barCount: 2 })
+
+        await wheelUpTimes(app, 20)
+
+        expect(app.timeline.maxDrawnBarNumber()).toBe(2)
+      })
+
+      it('小節数が 1 のとき、ホイールを上へ 100 ピクセル分 1 回回しても、タイムラインの代替コンテンツに「スクロール位置 1 小節目 1 拍目」が出る', async () => {
         const app = await startApp({ barCount: 1 })
 
         await app.timeline.wheel('up', { pixels: 100 })
-        await app.timeline.wheel('up', { pixels: 100 })
-        await app.timeline.wheel('up', { pixels: 100 })
-        await app.timeline.wheel('up', { pixels: 100 })
-        await app.timeline.wheel('up', { pixels: 100 })
 
-        expect(app.timeline.items()).toContain('スクロール位置 2 小節目 1 拍目')
+        expect(app.timeline.items()).toContain('スクロール位置 1 小節目 1 拍目')
       })
     })
   })
@@ -945,6 +936,29 @@ describe('[タイムラインの表示] タイムライン', () => {
         await zoomInWithCtrlWheel(app)
 
         expect(app.timeline.items()).toContain('スクロール位置 1 小節目 1 拍目の 833/960 拍後')
+      })
+    })
+  })
+})
+
+describe('[タイムラインの表示] グリッドの描画範囲', () => {
+  describe('正常系', () => {
+    describe('タイムラインを最小まで縮小すると', () => {
+      it('小節数が 2 のとき、タイムラインに描かれる小節番号は、1・2 になる', async () => {
+        const app = await startApp({ barCount: 2 })
+
+        await zoomOutToMinimumWithCtrlWheel(app)
+
+        expect(app.timeline.drawnBarNumbers()).toEqual([1, 2])
+      })
+
+      it('小節数が 2 で、3 小節目 1 拍目にタップノーツがあるとき、タイムラインに描かれる小節番号は、1・2・3 になる', async () => {
+        const app = await startApp({ barCount: 2 })
+        await app.loadChart([{ type: 'tap', tick: 7680, lane: 2 }])
+
+        await zoomOutToMinimumWithCtrlWheel(app)
+
+        expect(app.timeline.drawnBarNumbers()).toEqual([1, 2, 3])
       })
     })
   })

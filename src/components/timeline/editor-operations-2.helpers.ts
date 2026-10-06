@@ -153,3 +153,19 @@ export async function zoomInWithCtrlWheel(app: AppDriver): Promise<void> {
     heightBefore,
   )
 }
+
+export async function zoomOutToMinimumWithCtrlWheel(app: AppDriver): Promise<void> {
+  let heightBefore = Number.NaN
+  let heightAfter = app.timeline.gridStepHeight()
+  while (heightAfter !== heightBefore) {
+    heightBefore = heightAfter
+    await app.timeline.wheel('down', { ctrl: true })
+    heightAfter = app.timeline.gridStepHeight()
+  }
+}
+
+export async function wheelUpTimes(app: AppDriver, times: number): Promise<void> {
+  for (let count = 0; count < times; count++) {
+    await app.timeline.wheel('up', { pixels: 100 })
+  }
+}

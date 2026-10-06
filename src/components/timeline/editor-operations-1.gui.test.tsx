@@ -186,17 +186,14 @@ describe('[ノーツの編集] 譜面のノーツ', () => {
             )
           })
 
-          it('小節数が 1 で、ホイールを上へ 100 ピクセル分 3 回回してスクロール位置が 1 小節目 3 拍目の 29/48 拍後のとき、1 小節目 4 拍目の 3/4 拍後・レーン 2 でマウスを押し、タイムラインの上端より上で離すと、譜面のノーツの代替コンテンツに「ロングノーツ 始点 1 小節目 4 拍目の 3/4 拍後 レーン 2、続く点 2 小節目 1 拍目 レーン 2、終端 離す」が出る', async () => {
-            const app = await startApp({ barCount: 1 })
-            await app.timeline.wheel('up', { pixels: 100 })
-            await app.timeline.wheel('up', { pixels: 100 })
-            await app.timeline.wheel('up', { pixels: 100 })
-            expect(app.timeline.scrollPosition()).toBe('1 小節目 3 拍目の 29/48 拍後')
+          it('小節数が 2 で、つまみを一番上までドラッグしたあと、1 小節目 4 拍目の 3/4 拍後・レーン 2 でマウスを押し、タイムラインの上端より上で離すと、譜面のノーツの代替コンテンツに「ロングノーツ 始点 1 小節目 4 拍目の 3/4 拍後 レーン 2、続く点 3 小節目 1 拍目 レーン 2、終端 離す」が出る', async () => {
+            const app = await startApp({ barCount: 2 })
+            await app.scrollbar.dragThumbToTop()
 
             await app.timeline.drag(at(3600, 2), aboveTimelineTop(2))
 
             expect(app.timeline.notes()).toContain(
-              'ロングノーツ 始点 1 小節目 4 拍目の 3/4 拍後 レーン 2、続く点 2 小節目 1 拍目 レーン 2、終端 離す',
+              'ロングノーツ 始点 1 小節目 4 拍目の 3/4 拍後 レーン 2、続く点 3 小節目 1 拍目 レーン 2、終端 離す',
             )
           })
         })

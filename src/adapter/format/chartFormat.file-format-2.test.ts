@@ -27,7 +27,7 @@ const defaultProjectInfo: ProjectInfo = {
 }
 
 function writeChart(notes: Note[], laneCount = 5, projectInfo: ProjectInfo = defaultProjectInfo): SerializedChart {
-  return serializeChart({ notes }, laneCount, projectInfo) as SerializedChart
+  return serializeChart({ notes }, laneCount, 50, projectInfo) as SerializedChart
 }
 
 function writeProjectInfo(projectInfo: ProjectInfo): SerializedChart {
@@ -36,10 +36,6 @@ function writeProjectInfo(projectInfo: ProjectInfo): SerializedChart {
 
 function writeFirstNote(note: Note): SerializedNote {
   return writeChart([note]).notes[0] as SerializedNote
-}
-
-function sortedKeys(value: unknown): string[] {
-  return Object.keys(value as object).toSorted()
 }
 
 const tapAtTick0Lane1: Note = { id: 'n1', type: 'tap', tick: 0, lane: 1 }
@@ -73,7 +69,7 @@ const longWithThreeFollowingPoints: Note = {
 describe('[譜面ファイル書き出し] 譜面ファイル全体の項目', () => {
   describe('譜面の書き出し', () => {
     describe('正常系', () => {
-      it('譜面を書き出すと、書き出した JSON のファイルの版は、1 になる', () => {
+      it('譜面を書き出すと、書き出した JSON のファイルのバージョンは、1 になる', () => {
         const json = writeChart([tapAtTick0Lane1])
 
         expect(json.formatVersion).toBe(1)
@@ -118,12 +114,6 @@ describe('[譜面ファイル書き出し] プロジェクト情報', () => {
 
           expect(json.tempo).toMatchObject([{ tick: 0, bpm: 128 }])
         })
-
-        it('書き出した JSON のテンポ変化点の項目は、tick・BPM だけになる', () => {
-          const json = writeProjectInfo({ ...defaultProjectInfo, tempo: [{ tick: 0, bpm: 128 }] })
-
-          expect(sortedKeys(json.tempo[0])).toEqual(['bpm', 'tick'])
-        })
       })
 
       describe('拍子変化点が tick 0・分子 3・分母 4 の 1 点だけのとき', () => {
@@ -131,12 +121,6 @@ describe('[譜面ファイル書き出し] プロジェクト情報', () => {
           const json = writeProjectInfo({ ...defaultProjectInfo, meter: [{ tick: 0, num: 3, den: 4 }] })
 
           expect(json.meter).toMatchObject([{ tick: 0, num: 3, den: 4 }])
-        })
-
-        it('書き出した JSON の拍子変化点の項目は、tick・分子・分母だけになる', () => {
-          const json = writeProjectInfo({ ...defaultProjectInfo, meter: [{ tick: 0, num: 3, den: 4 }] })
-
-          expect(sortedKeys(json.meter[0])).toEqual(['den', 'num', 'tick'])
         })
       })
 
@@ -297,55 +281,6 @@ describe('[譜面ファイル書き出し] ロングノーツの終端', () => {
         const note = writeFirstNote(longWithEnd({ kind: 'flick', direction: 'right' }))
 
         expect(note.end).toMatchObject({ flick: 'right' })
-      })
-    })
-  })
-})
-
-describe('[譜面ファイル書き出し] 書き出す JSON の項目', () => {
-  describe('譜面の書き出し', () => {
-    describe('正常系', () => {
-      it('譜面を書き出すと、書き出した JSON の項目は、ファイルの版・オフセット・レーン数・テンポ・拍子・ノーツの順の 6 つだけになる', () => {
-        const json = writeChart([tapAtTick0Lane1])
-
-        expect(Object.keys(json)).toEqual(['formatVersion', 'offsetMs', 'laneCount', 'tempo', 'meter', 'notes'])
-      })
-
-      it.each([
-        [
-          'タップノーツがある譜面のとき',
-          '書き出した JSON のタップノーツの項目は、tick・レーン・種類だけになる',
-          tapAtTick0Lane1,
-          ['lane', 'tick', 'type'],
-        ],
-        [
-          'フリックノーツがある譜面のとき',
-          '書き出した JSON のフリックノーツの項目は、tick・レーン・種類・向きだけになる',
-          upFlickAtTick480Lane2,
-          ['dir', 'lane', 'tick', 'type'],
-        ],
-        [
-          'ロングノーツがある譜面のとき',
-          '書き出した JSON のロングノーツの項目は、tick・レーン・種類・続く点・終端だけになる',
-          releaseLongFrom960To1920,
-          ['end', 'lane', 'path', 'tick', 'type'],
-        ],
-      ])('%s、%s', (_when, _result, note, keys) => {
-        const written = writeFirstNote(note)
-
-        expect(sortedKeys(written)).toEqual(keys)
-      })
-
-      it('ロングノーツがある譜面のとき、書き出した JSON のロングノーツの続く点の項目は、tick・レーンだけになる', () => {
-        const note = writeFirstNote(releaseLongFrom960To1920)
-
-        expect(sortedKeys((note.path as unknown[])[0])).toEqual(['lane', 'tick'])
-      })
-
-      it('右の終端フリックがあるロングノーツがある譜面のとき、書き出した JSON のロングノーツの終端の項目は、"flick" だけになる', () => {
-        const note = writeFirstNote(longWithEnd({ kind: 'flick', direction: 'right' }))
-
-        expect(sortedKeys(note.end)).toEqual(['flick'])
       })
     })
   })

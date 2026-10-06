@@ -51,9 +51,33 @@ class FixedSizeResizeObserver implements ResizeObserver {
   disconnect(): void {}
 }
 
-function createCanvasContextStub(): CanvasRenderingContext2D {
+const INTEGER_TEXT_PATTERN = /^\d+$/
+const drawnIntegersByCanvas = new WeakMap<HTMLCanvasElement, number[]>()
+
+function startFrameIfCleared(canvas: HTMLCanvasElement, x: number, y: number, width: number, height: number): void {
+  const isFullCanvasFill = x === 0 && y === 0 && width === canvas.width && height === canvas.height
+  const frameIntegers = drawnIntegersByCanvas.get(canvas) ?? []
+  drawnIntegersByCanvas.set(canvas, isFullCanvasFill ? [] : frameIntegers)
+}
+
+function recordIntegerText(canvas: HTMLCanvasElement, text: string): void {
+  const frameIntegers = drawnIntegersByCanvas.get(canvas) ?? []
+  drawnIntegersByCanvas.set(canvas, INTEGER_TEXT_PATTERN.test(text) ? [...frameIntegers, Number(text)] : frameIntegers)
+}
+
+/** キャンバスに最後に描かれたフレーム (キャンバス全体を塗りつぶしてから後) の、整数だけの文字列を、描かれた順に返す。 */
+export function readLastFrameIntegers(canvas: HTMLCanvasElement): readonly number[] {
+  return drawnIntegersByCanvas.get(canvas) ?? []
+}
+
+function createCanvasContextStub(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
   const fixedValues = new Map<string | symbol, unknown>([
     ['measureText', () => ({ width: 0 })],
+    [
+      'fillRect',
+      (x: number, y: number, width: number, height: number) => startFrameIfCleared(canvas, x, y, width, height),
+    ],
+    ['fillText', (text: string) => recordIntegerText(canvas, text)],
     ['canvas', undefined],
   ])
   const assignedValues = new Map<string | symbol, unknown>()
@@ -74,8 +98,9 @@ export function installBrowserStubs(): void {
   HTMLElement.prototype.setPointerCapture = () => undefined
   HTMLElement.prototype.releasePointerCapture = () => undefined
   HTMLElement.prototype.hasPointerCapture = () => false
-  HTMLCanvasElement.prototype.getContext = (() =>
-    createCanvasContextStub()) as unknown as HTMLCanvasElement['getContext']
+  HTMLCanvasElement.prototype.getContext = function getContext(this: HTMLCanvasElement) {
+    return createCanvasContextStub(this)
+  } as unknown as HTMLCanvasElement['getContext']
   globalThis.ResizeObserver = FixedSizeResizeObserver
 
   const state = getDownloadsState()

@@ -151,6 +151,7 @@ export function CloudOpenDialog({ projects, onClose }: { projects: CloudProjects
             formatVersion: FILE_FORMAT_VERSION,
             offsetMs: projectData.offsetMs,
             laneCount: chartData.laneCount,
+            barCount: projectData.barCount,
             tempo: projectData.tempo,
             meter: projectData.meter,
             notes: chartData.notes,
