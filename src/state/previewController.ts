@@ -3,7 +3,7 @@ import { convertAudioSecondsToTick } from '../domain/projectInfo.ts'
 import { useEditorStore } from './editorStore.ts'
 import { getAudioContext } from '../adapter/audio/audioContext.ts'
 import { startPreview, type PreviewSession } from '../adapter/audio/previewEngine.ts'
-import { calculateStopTick, PREVIEW_SPEED } from '../domain/previewSchedule.ts'
+import { calculateStopTick } from '../domain/previewSchedule.ts'
 
 interface ActivePreview {
   readonly session: PreviewSession
@@ -53,9 +53,9 @@ export function endPreview(): void {
   }
   const { session, startTick } = active
   active = null
-  const elapsedPlaybackSeconds = session.stop()
+  const elapsedSeconds = session.stop()
   const state = useEditorStore.getState()
-  state.setPreviewTick(calculateStopTick(state.projectInfo, startTick, elapsedPlaybackSeconds, PREVIEW_SPEED))
+  state.setPreviewTick(calculateStopTick(state.projectInfo, startTick, elapsedSeconds))
 }
 
 /** 再生中のプレビューを、指定の tick から再生し直す。再生中でなければ何もしない。 */
@@ -73,5 +73,5 @@ export function getPreviewTick(): number | null {
     return null
   }
   const { projectInfo } = useEditorStore.getState()
-  return calculateStopTick(projectInfo, active.startTick, active.session.getElapsedPlaybackSeconds(), PREVIEW_SPEED)
+  return calculateStopTick(projectInfo, active.startTick, active.session.getElapsedSeconds())
 }

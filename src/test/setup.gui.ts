@@ -7,10 +7,6 @@ import { resetCloudWorld } from './fakeFirebase.ts'
 vi.mock('firebase/auth', async () => (await import('./fakeFirebase.ts')).createFakeAuthModule())
 vi.mock('firebase/firestore', async () => (await import('./fakeFirebase.ts')).createFakeFirestoreModule())
 vi.mock('firebase/storage', async () => (await import('./fakeFirebase.ts')).createFakeStorageModule())
-vi.mock('signalsmith-stretch', async () => {
-  const { createFakeStretch } = await import('./fakeAudio.ts')
-  return { default: () => createFakeStretch() }
-})
 
 function resetWorld(): void {
   resetAudioWorld()

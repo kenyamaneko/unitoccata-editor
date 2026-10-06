@@ -7,11 +7,6 @@ import { clearDownloads, installBrowserStubs } from './browserStubs.ts'
 import { removeCaseData } from './emulator.ts'
 import { FakeAudioContext, resetAudioWorld } from './fakeAudio.ts'
 
-vi.mock('signalsmith-stretch', async () => {
-  const { createFakeStretch } = await import('./fakeAudio.ts')
-  return { default: () => createFakeStretch() }
-})
-
 async function resetWorld(): Promise<void> {
   resetAudioWorld()
   clearDownloads()

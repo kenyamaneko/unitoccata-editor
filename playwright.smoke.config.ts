@@ -1,5 +1,5 @@
 import { defineConfig } from '@playwright/test'
-import { requireEnvironmentVariable } from './e2e-smoke/smokeEnvironment.ts'
+import { requireEnvironmentVariable } from './smoke/smokeEnvironment.ts'
 
 const SMOKE_TIMEOUT_MS = 30_000
 const SMOKE_VIEWPORT = { width: 1280, height: 1000 }
@@ -9,7 +9,7 @@ requireEnvironmentVariable('SMOKE_FIREBASE_PROJECT_ID')
 requireEnvironmentVariable('SMOKE_FIREBASE_STORAGE_BUCKET')
 
 export default defineConfig({
-  testDir: './e2e-smoke',
+  testDir: './smoke',
   timeout: SMOKE_TIMEOUT_MS,
   reporter: [['list'], ['junit', { outputFile: 'test-results/smoke-junit.xml' }]],
   use: {

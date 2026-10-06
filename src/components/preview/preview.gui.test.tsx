@@ -4,17 +4,17 @@ import { startApp, type AppDriver, type StartAppOptions } from '../../test/app.t
 import { createAudioFile } from '../../test/fakeAudio.ts'
 import {
   advanceClock,
+  advanceClockSincePlaybackStarted,
   allowAudioFeatures,
   enterPreview,
   expectEditorScreen,
   expectPreviewScreen,
   expectStartFailureNotice,
-  failResumeRequest,
   moveFocusToPage,
   pressKey,
   rememberTick1920,
   rememberTick5000,
-  restartPreviewAfter,
+  restartPreviewAfterPlaybackStarted,
   scrollEditor,
   scrollPreview,
   turnClickSoundOn,
@@ -29,8 +29,8 @@ const NOTICE_WHEN_AUDIO_CONTEXT_FAILS =
   'プレビューを始められませんでした: 音声を再生する機能を作れませんでした。ページを読み込み直してから、もう一度お試しください'
 const START_FAILURE_NOTICE_CONTEXT =
   'プレビューを始められませんでした: 音声の再生を再開できませんでした。もう一度プレビューを押してください'
-const NOTICE_WHEN_STRETCH_FAILS =
-  'プレビューを始められませんでした: 音源をピッチを保ったまま 0.5 倍速で再生する準備ができませんでした。音源を読み込み直してから、もう一度プレビューを押してください'
+const NOTICE_WHEN_AUDIO_PLAYBACK_FAILS =
+  'プレビューを始められませんでした: 音源を再生できませんでした。音源を読み込み直してから、もう一度プレビューを押してください'
 const NOTICE_WHEN_FIRST_CLICK_SOUND_FAILS =
   'プレビューを始められませんでした: クリック音を鳴らせませんでした。クリック音を OFF にするか、もう一度プレビューを押してください'
 
@@ -52,11 +52,11 @@ const START_FAILURES: ReadonlyArray<StartFailure> = [
     },
   ],
   [
-    '音源を読み込んであり、音源を 0.5 倍速で再生する準備が失敗するとき',
-    NOTICE_WHEN_STRETCH_FAILS,
+    '音源を読み込んであり、音源の再生が失敗するとき',
+    NOTICE_WHEN_AUDIO_PLAYBACK_FAILS,
     async (app) => {
       await app.files.chooseAudio(createAudioFile('song.mp3'))
-      app.audio.failStretchCreation()
+      app.audio.failAudioPlayback()
     },
   ],
   [
@@ -98,31 +98,20 @@ const HIDDEN_ELEMENTS: ReadonlyArray<HiddenElement> = [
   },
 ]
 
-async function startPreviewAndReturnToEditorBeforeResume(): Promise<AppDriver> {
+async function startAppWithBpm(bpm: number): Promise<AppDriver> {
   const app = await startApp()
-  app.audio.deferResume()
-  await app.selectTab('プレビュー')
-  await app.selectTab('エディタ')
-  return app
-}
-
-async function startPreviewTwiceWithEditorBetween(): Promise<AppDriver> {
-  const app = await startApp()
-  app.audio.deferResume()
-  await app.selectTab('プレビュー')
-  await app.selectTab('エディタ')
-  await app.selectTab('プレビュー')
+  await app.loadChart([], undefined, { tempo: [{ tick: 0, bpm }] })
   return app
 }
 
 async function arrangeClickSoundFailure(): Promise<AppDriver> {
   const app = await startApp()
-  await app.loadChart([{ type: 'tap', tick: 5760, lane: 2 }])
+  await app.loadChart([{ type: 'tap', tick: 10560, lane: 2 }])
   await rememberTick5000(app)
   await turnClickSoundOn(app)
-  app.audio.failClickSound({ times: 1 })
+  app.audio.failClickSound({ times: 1, afterPlays: 1 })
   await app.selectTab('プレビュー')
-  await advanceClock(app, 0.1)
+  await advanceClockSincePlaybackStarted(app, 0.95)
   expect(app.notice(CLICK_SOUND_STOPS_PREVIEW_NOTICE), 'クリック音の発音の失敗が起きていません').toBeInTheDocument()
   return app
 }
@@ -141,37 +130,21 @@ describe('[プレビュー] プレビューの再生', () => {
       })
 
       it.each<{
-        readonly given: string
+        readonly bpm: number
         readonly seconds: number
         readonly expectedPosition: string
-        readonly arrange: Arrangement
       }>([
-        {
-          given: '再生位置が 1 小節目 1 拍目のとき',
-          seconds: 0.1,
-          expectedPosition: '1 小節目 1 拍目',
-          arrange: leaveAsIs,
-        },
-        {
-          given: '再生位置が 1 小節目 1 拍目のとき',
-          seconds: 2.25,
-          expectedPosition: '1 小節目 3 拍目',
-          arrange: leaveAsIs,
-        },
-        {
-          given: '再生位置が 2 小節目 2 拍目の 5/24 拍後のとき',
-          seconds: 2.25,
-          expectedPosition: '2 小節目 4 拍目の 5/24 拍後',
-          arrange: rememberTick5000,
-        },
+        { bpm: 120, seconds: 1, expectedPosition: '1 小節目 3 拍目' },
+        { bpm: 120, seconds: 2, expectedPosition: '2 小節目 1 拍目' },
+        { bpm: 180, seconds: 1, expectedPosition: '1 小節目 4 拍目' },
+        { bpm: 180, seconds: 2, expectedPosition: '2 小節目 3 拍目' },
       ])(
-        '$given、「プレビュー」タブを選んで BPM 120・0.5 倍速で開始 $seconds 秒後に、プレビューの代替コンテンツに「再生位置 $expectedPosition」が出る',
-        async ({ seconds, expectedPosition, arrange }) => {
-          const app = await startApp()
-          await arrange(app)
+        'BPM $bpm のとき、「プレビュー」タブを選んで再生が始まってから $seconds 秒後に、プレビューの代替コンテンツに「再生位置 $expectedPosition」が出る',
+        async ({ bpm, seconds, expectedPosition }) => {
+          const app = await startAppWithBpm(bpm)
 
           await app.selectTab('プレビュー')
-          await advanceClock(app, seconds)
+          await advanceClockSincePlaybackStarted(app, seconds)
 
           expect(app.preview.items()).toContain(`再生位置 ${expectedPosition}`)
         },
@@ -192,62 +165,35 @@ describe('[プレビュー] プレビューの再生', () => {
   describe('プレビューのやり直し', () => {
     describe('正常系', () => {
       it.each<{
-        readonly given: string
-        readonly options: StartAppOptions
-        readonly seconds: number
+        readonly bpm: number
         readonly expectedPosition: string
-        readonly arrange: Arrangement
       }>([
-        {
-          given: '再生位置が 1 小節目 1 拍目のとき',
-          options: {},
-          seconds: 0.1,
-          expectedPosition: '1 小節目 1 拍目',
-          arrange: leaveAsIs,
-        },
-        {
-          given: '再生位置が 1 小節目 1 拍目のとき',
-          options: {},
-          seconds: 2.25,
-          expectedPosition: '1 小節目 3 拍目',
-          arrange: leaveAsIs,
-        },
-        {
-          given: '小節数が 1 で、再生位置が 1 小節目 1 拍目のとき',
-          options: { barCount: 1 },
-          seconds: 6.25,
-          expectedPosition: '2 小節目 1 拍目',
-          arrange: leaveAsIs,
-        },
-        {
-          given: '再生位置が 1 小節目 3 拍目のとき',
-          options: {},
-          seconds: 2.25,
-          expectedPosition: '2 小節目 1 拍目',
-          arrange: rememberTick1920,
-        },
+        { bpm: 120, expectedPosition: '1 小節目 3 拍目' },
+        { bpm: 180, expectedPosition: '1 小節目 4 拍目' },
       ])(
-        '$given、「プレビュー」タブを選んで BPM 120・0.5 倍速で $seconds 秒後に「エディタ」タブへ戻り、もう一度「プレビュー」タブを選ぶと、プレビューの代替コンテンツに「再生位置 $expectedPosition」が出る',
-        async ({ options, seconds, expectedPosition, arrange }) => {
-          const app = await startApp(options)
-          await arrange(app)
+        'BPM $bpm のとき、「プレビュー」タブを選んで再生が始まってから 1 秒後に「エディタ」タブへ戻り、もう一度「プレビュー」タブを選ぶと、プレビューの代替コンテンツに「再生位置 $expectedPosition」が出る',
+        async ({ bpm, expectedPosition }) => {
+          const app = await startAppWithBpm(bpm)
 
-          await restartPreviewAfter(app, seconds)
+          await restartPreviewAfterPlaybackStarted(app, 1)
 
           expect(app.preview.items()).toContain(`再生位置 ${expectedPosition}`)
         },
       )
     })
+  })
 
+  describe('音声再生の再開に失敗したあとの「プレビュー」タブの選択', () => {
     describe('異常系', () => {
-      it('前回のプレビューが音声再生の再開に失敗したあと、音声が使えるようになったとき、「プレビュー」タブを選んで BPM 120・0.5 倍速で 2.25 秒後に「エディタ」タブへ戻り、もう一度「プレビュー」タブを選ぶと、プレビューの代替コンテンツに「再生位置 1 小節目 3 拍目」が出る', async () => {
-        const app = await startApp()
+      it('BPM 120 で、前回のプレビューが音声再生の再開に失敗したあと、音声が使えるようになったとき、「プレビュー」タブを選んで再生が始まってから 1 秒後に、プレビューの代替コンテンツに「再生位置 1 小節目 3 拍目」が出る', async () => {
+        const app = await startAppWithBpm(120)
         app.audio.failResume()
         await app.selectTab('プレビュー')
         expectStartFailureNotice(app)
         allowAudioFeatures()
 
-        await restartPreviewAfter(app, 2.25)
+        await app.selectTab('プレビュー')
+        await advanceClockSincePlaybackStarted(app, 1)
 
         expect(app.preview.items()).toContain('再生位置 1 小節目 3 拍目')
       })
@@ -273,36 +219,29 @@ describe('[プレビュー] プレビューの再生', () => {
         },
       )
 
-      it('「プレビュー」タブを選んで BPM 120・0.5 倍速で開始 2.25 秒後に、ホイールを上へ 100 ピクセル回すと、プレビューの代替コンテンツに「再生位置 1 小節目 3 拍目の 833/960 拍後」が出る', async () => {
-        const app = await startApp()
+      it.each<{
+        readonly bpm: number
+        readonly direction: string
+        readonly wheel: 'up' | 'down'
+        readonly pixels: number
+        readonly expectedPosition: string
+      }>([
+        { bpm: 120, direction: '上へ', wheel: 'up', pixels: 100, expectedPosition: '1 小節目 3 拍目の 833/960 拍後' },
+        { bpm: 180, direction: '上へ', wheel: 'up', pixels: 100, expectedPosition: '1 小節目 4 拍目の 833/960 拍後' },
+        { bpm: 120, direction: '下へ', wheel: 'down', pixels: 200, expectedPosition: '1 小節目 1 拍目の 253/960 拍後' },
+        { bpm: 180, direction: '下へ', wheel: 'down', pixels: 200, expectedPosition: '1 小節目 2 拍目の 253/960 拍後' },
+      ])(
+        'BPM $bpm のとき、「プレビュー」タブを選んで再生が始まってから 1 秒後に、ホイールを$direction $pixels ピクセル回すと、プレビューの代替コンテンツに「再生位置 $expectedPosition」が出る',
+        async ({ bpm, wheel, pixels, expectedPosition }) => {
+          const app = await startAppWithBpm(bpm)
 
-        await app.selectTab('プレビュー')
-        await advanceClock(app, 2.25)
-        await scrollPreview(app, 'up', 100)
+          await app.selectTab('プレビュー')
+          await advanceClockSincePlaybackStarted(app, 1)
+          await scrollPreview(app, wheel, pixels)
 
-        expect(app.preview.items()).toContain('再生位置 1 小節目 3 拍目の 833/960 拍後')
-      })
-
-      it('「プレビュー」タブを選んで BPM 120・0.5 倍速で開始 2.25 秒後に、ホイールを下へ 100 ピクセル回すと、プレビューの代替コンテンツに「再生位置 1 小節目 2 拍目の 127/960 拍後」が出る', async () => {
-        const app = await startApp()
-
-        await app.selectTab('プレビュー')
-        await advanceClock(app, 2.25)
-        await scrollPreview(app, 'down', 100)
-
-        expect(app.preview.items()).toContain('再生位置 1 小節目 2 拍目の 127/960 拍後')
-      })
-
-      it('「プレビュー」タブを選んで BPM 120・0.5 倍速で 2.25 秒後にホイールを上へ 100 ピクセル回し、さらに 2.25 秒後に、プレビューの代替コンテンツに「再生位置 2 小節目 1 拍目の 833/960 拍後」が出る', async () => {
-        const app = await startApp()
-
-        await app.selectTab('プレビュー')
-        await advanceClock(app, 2.25)
-        await scrollPreview(app, 'up', 100)
-        await advanceClock(app, 2.25)
-
-        expect(app.preview.items()).toContain('再生位置 2 小節目 1 拍目の 833/960 拍後')
-      })
+          expect(app.preview.items()).toContain(`再生位置 ${expectedPosition}`)
+        },
+      )
 
       it('エディタを上へ 100 ピクセルスクロールしてスクロール位置が 1 小節目 1 拍目の 833/960 拍後のとき、「プレビュー」タブを選んで開始 0.1 秒後にホイールを上へ 100 ピクセル回し、「エディタ」タブへ戻っても、プレビューのホイール操作はエディタのスクロール位置に影響せず、タイムラインの代替コンテンツは「スクロール位置 1 小節目 1 拍目の 833/960 拍後」のままになる', async () => {
         const app = await startApp()
@@ -364,47 +303,10 @@ describe('[プレビュー] プレビューの失敗時の画面の下のメッ�
         },
       )
 
-      it('クリック音が ON で、再生位置が 2 小節目 2 拍目の 5/24 拍後のとき、「プレビュー」タブを選んで開始 0.1 秒後に最初のクリック音の発音が失敗すると、画面の下のメッセージに「クリック音を鳴らせなくなったため、プレビューを止めました。クリック音を OFF にするか、もう一度プレビューを押してください」が表示される', async () => {
+      it('BPM 120 で、クリック音が ON で、再生位置が 2 小節目 2 拍目の 5/24 拍後のとき、「プレビュー」タブを選んで再生が始まってから 0.95 秒後に 2 個目のクリック音の発音が失敗すると、画面の下のメッセージに「クリック音を鳴らせなくなったため、プレビューを止めました。クリック音を OFF にするか、もう一度プレビューを押してください」が表示される', async () => {
         const app = await arrangeClickSoundFailure()
 
         expect(app.notice(CLICK_SOUND_STOPS_PREVIEW_NOTICE)).toBeInTheDocument()
-      })
-    })
-  })
-})
-
-describe('[プレビュー] プレビューの失敗時に表示される画面', () => {
-  describe('「プレビュー」タブの選択', () => {
-    describe('異常系', () => {
-      it('ブラウザの音声再生機能の作成が失敗するとき、「プレビュー」タブを選ぶと、「エディタ」タブが選択されたまま、タイムラインの代替コンテンツに「スクロール位置 1 小節目 1 拍目」が出て、プレビューの画面は出ない', async () => {
-        const app = await startApp()
-        app.audio.failContextCreation()
-
-        await app.selectTab('プレビュー')
-
-        expectEditorScreen(app, '1 小節目 1 拍目')
-      })
-
-      it('「プレビュー」タブを選んだ音声再生の再開が終わる前に、「エディタ」タブを選んで戻したあと、その再開が失敗するとき、「エディタ」タブが選択されたまま、タイムラインの代替コンテンツに「スクロール位置 1 小節目 1 拍目」が出て、プレビューの画面は出ない', async () => {
-        const app = await startPreviewAndReturnToEditorBeforeResume()
-
-        await failResumeRequest(app, 0)
-
-        expectEditorScreen(app, '1 小節目 1 拍目')
-      })
-
-      it('「プレビュー」タブを選んだ音声再生の再開が終わる前に、「エディタ」タブを選んで戻して、もう一度「プレビュー」タブを選んだあと、1 回目の再開が失敗するとき、「プレビュー」タブが選択されたまま、プレビューの代替コンテンツに「再生位置 1 小節目 1 拍目」が出て、エディタの画面は出ない', async () => {
-        const app = await startPreviewTwiceWithEditorBetween()
-
-        await failResumeRequest(app, 0)
-
-        expectPreviewScreen(app, '1 小節目 1 拍目')
-      })
-
-      it('クリック音が ON で、再生位置が 2 小節目 2 拍目の 5/24 拍後のとき、「プレビュー」タブを選んで開始 0.1 秒後に最初のクリック音の発音が失敗すると、「エディタ」タブが選択され、タイムラインの代替コンテンツに「スクロール位置 1 小節目 1 拍目」が出て、プレビューの画面は出ない', async () => {
-        const app = await arrangeClickSoundFailure()
-
-        expectEditorScreen(app, '1 小節目 1 拍目')
       })
     })
   })
@@ -476,6 +378,32 @@ describe('[プレビュー] 「プレビュー」タブを選んだ画面で表�
 
         expect(locate(app)).toBeVisible()
       })
+    })
+  })
+})
+
+describe('[プレビュー] 「初めから再生」ボタン', () => {
+  describe('「初めから再生」ボタンの押下', () => {
+    describe('正常系', () => {
+      it.each<{
+        readonly bpm: number
+        readonly expectedPosition: string
+      }>([
+        { bpm: 120, expectedPosition: '1 小節目 3 拍目' },
+        { bpm: 180, expectedPosition: '1 小節目 4 拍目' },
+      ])(
+        'BPM $bpm のとき、「プレビュー」タブを選んで再生が始まってから 2 秒後に「初めから再生」ボタンを押し、再生が始まり直してから 1 秒後に、プレビューの代替コンテンツに「再生位置 $expectedPosition」が出る',
+        async ({ bpm, expectedPosition }) => {
+          const app = await startAppWithBpm(bpm)
+          await app.selectTab('プレビュー')
+          await advanceClockSincePlaybackStarted(app, 2)
+
+          await app.click(app.button('初めから再生'))
+          await advanceClockSincePlaybackStarted(app, 1)
+
+          expect(app.preview.items()).toContain(`再生位置 ${expectedPosition}`)
+        },
+      )
     })
   })
 })

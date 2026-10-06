@@ -16,8 +16,8 @@
     "test:e2e": "firebase emulators:exec --only auth,storage,firestore --project demo-unitoccata-editor \"playwright test\"",
     "test:smoke": "playwright test --config playwright.smoke.config.ts",
     "preview": "vite preview",
-    "format": "prettier --write src e2e e2e-smoke *.config.ts",
-    "format:check": "prettier --check src e2e e2e-smoke *.config.ts"
+    "format": "prettier --write src e2e smoke *.config.ts",
+    "format:check": "prettier --check src e2e smoke *.config.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -25,7 +25,6 @@
     "midi-file": "^1.2.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "signalsmith-stretch": "^1.3.2",
     "tailwindcss": "^4.3.3",
     "zustand": "^5.0.15"
   },

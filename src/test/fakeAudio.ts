@@ -9,13 +9,6 @@ const DEFAULT_DURATION_SECONDS = 10
 const DECODE_ERROR_NAME = 'EncodingError'
 const RESUME_FAILURE_MESSAGE = '音声の再生の再開に失敗しました (テストが起こした故障)'
 
-export interface ScheduledAudio {
-  readonly output?: number
-  readonly input?: number
-  readonly rate?: number
-  readonly active?: boolean
-}
-
 export interface PendingResume {
   succeed(): void
   fail(): void
@@ -33,11 +26,8 @@ export interface AudioControls {
   resumeRequests(): readonly PendingResume[]
   deferDecoding(): void
   decodeRequests(): readonly PendingDecode[]
-  failStretchCreation(): void
-  failStretchBufferTransfer(): void
-  failStretchSchedule(): void
-  failClickSound(options?: { readonly times?: number }): void
-  scheduledAudio(): readonly ScheduledAudio[]
+  failAudioPlayback(): void
+  failClickSound(options?: { readonly times?: number; readonly afterPlays?: number }): void
   clickSoundTimes(): readonly number[]
 }
 
@@ -45,13 +35,11 @@ interface AudioWorld {
   contextCreationFails: boolean
   resumeMode: 'succeed' | 'fail' | 'defer'
   decodeIsDeferred: boolean
-  stretchCreationFails: boolean
-  stretchBufferTransferFails: boolean
-  stretchScheduleFails: boolean
+  audioPlaybackFails: boolean
   clickFailuresRemaining: number
+  clickPlaysBeforeFailure: number
   readonly resumeRequests: PendingResume[]
   readonly decodeRequests: PendingDecode[]
-  readonly scheduledAudio: ScheduledAudio[]
   readonly clickSoundTimes: number[]
 }
 
@@ -60,13 +48,11 @@ function createAudioWorld(): AudioWorld {
     contextCreationFails: false,
     resumeMode: 'succeed',
     decodeIsDeferred: false,
-    stretchCreationFails: false,
-    stretchBufferTransferFails: false,
-    stretchScheduleFails: false,
+    audioPlaybackFails: false,
     clickFailuresRemaining: 0,
+    clickPlaysBeforeFailure: 0,
     resumeRequests: [],
     decodeRequests: [],
-    scheduledAudio: [],
     clickSoundTimes: [],
   }
 }
@@ -99,19 +85,13 @@ export function getAudioControls(): AudioControls {
       world.decodeIsDeferred = true
     },
     decodeRequests: () => world.decodeRequests,
-    failStretchCreation: () => {
-      world.stretchCreationFails = true
-    },
-    failStretchBufferTransfer: () => {
-      world.stretchBufferTransferFails = true
-    },
-    failStretchSchedule: () => {
-      world.stretchScheduleFails = true
+    failAudioPlayback: () => {
+      world.audioPlaybackFails = true
     },
     failClickSound: (options = {}) => {
       world.clickFailuresRemaining = options.times ?? Infinity
+      world.clickPlaysBeforeFailure = options.afterPlays ?? 0
     },
-    scheduledAudio: () => world.scheduledAudio,
     clickSoundTimes: () => world.clickSoundTimes,
   }
 }
@@ -147,13 +127,34 @@ function createFakeOscillator(world: AudioWorld): OscillatorNode {
     world.clickFailuresRemaining--
     return failWith(new Error('クリック音の発音に失敗しました (テストが起こした故障)'))
   }
+  const playOrFail = (when: number): void => {
+    if (world.clickPlaysBeforeFailure > 0) {
+      world.clickPlaysBeforeFailure--
+      playClick(when)
+    } else if (world.clickFailuresRemaining > 0) {
+      failClick()
+    } else {
+      playClick(when)
+    }
+  }
   return {
     ...createFakeNode(),
     frequency: { value: 0 },
-    start: (when: number) => (world.clickFailuresRemaining > 0 ? failClick() : playClick(when)),
+    start: playOrFail,
     stop: () => undefined,
     onended: null,
   } as unknown as OscillatorNode
+}
+
+function createFakeBufferSource(world: AudioWorld): AudioBufferSourceNode {
+  return {
+    ...createFakeNode(),
+    buffer: null,
+    start: () =>
+      world.audioPlaybackFails ? failWith(new Error('音源の再生を始められません (テストが起こした故障)')) : undefined,
+    stop: () => undefined,
+    onended: null,
+  } as unknown as AudioBufferSourceNode
 }
 
 function createFakeGain(): GainNode {
@@ -202,6 +203,10 @@ export class FakeAudioContext {
     return createFakeOscillator(this.#world)
   }
 
+  createBufferSource(): AudioBufferSourceNode {
+    return createFakeBufferSource(this.#world)
+  }
+
   createGain(): GainNode {
     return createFakeGain()
   }
@@ -220,28 +225,6 @@ export class FakeAudioContext {
         })
       : decode()
   }
-}
-
-export async function createFakeStretch(): Promise<unknown> {
-  const world = getAudioWorld()
-  const transferBuffers = (buffers: Float32Array[]): Promise<number> =>
-    world.stretchBufferTransferFails
-      ? Promise.reject(new Error('音源データを渡せません (テストが起こした故障)'))
-      : Promise.resolve(buffers[0]?.length ?? 0)
-  const recordSchedule = (change: ScheduledAudio): void => {
-    world.scheduledAudio.push(change)
-  }
-  return world.stretchCreationFails
-    ? failWith(new Error('倍速再生の機能を作れません (テストが起こした故障)'))
-    : {
-        ...createFakeNode(),
-        addBuffers: transferBuffers,
-        schedule: (change: ScheduledAudio) =>
-          world.stretchScheduleFails
-            ? failWith(new Error('再生を予約できません (テストが起こした故障)'))
-            : recordSchedule(change),
-        stop: () => undefined,
-      }
 }
 
 export function createAudioBytes(
