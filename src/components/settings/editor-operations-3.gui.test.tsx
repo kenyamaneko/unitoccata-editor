@@ -161,7 +161,9 @@ describe('[プロジェクト情報] 小節数', () => {
 
         expect(app.timeline.maxDrawnBarNumber()).toBe(100)
       })
+    })
 
+    describe('異常系', () => {
       describe('「小節数」の入力欄に 1 を入力してエンターキーを押す', () => {
         it.each<[string, (app: AppDriver) => Promise<void>]>([
           ['2 小節目 1 拍目にノーツがあるとき', (app) => app.loadChart([{ type: 'tap', tick: 3840, lane: 2 }])],

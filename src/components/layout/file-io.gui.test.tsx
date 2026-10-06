@@ -269,7 +269,7 @@ describe('[譜面ファイル読み込み] 譜面ファイルの小節数', () =
     describe('正常系', () => {
       describe('小節数が 50 のエディタのとき', () => {
         it.each([{ fileBarCount: 1 }, { fileBarCount: 1000 }])(
-          'barCount が $fileBarCount の譜面ファイルを選ぶと、「小節数」の入力欄は、$fileBarCount になる',
+          'barCount が $fileBarCount のとき、「小節数」の入力欄は、$fileBarCount になる',
           async ({ fileBarCount }) => {
             const app = await startApp()
 
