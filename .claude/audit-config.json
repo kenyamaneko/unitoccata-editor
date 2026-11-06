@@ -1,25 +1,16 @@
 {
   "name": "unitoccata-editor",
-  "conditions": {
-    "ts": "\\.(ts|tsx)$"
-  },
   "rules": [
     {
-      "rule": "testing.md",
-      "when": "always"
+      "rule": "testing.md"
     },
     {
       "rule": "lang/typescript.md",
-      "when": "ts"
+      "files": "\\.(ts|tsx)$"
     }
   ],
-  "overlay_names": {},
-  "replace_overlay": [],
   "exempt_overlays": [
-    {
-      "path": "flow.md",
-      "reason": "ブランチ運用とデプロイの進め方を定めるもので、staged diff の内容から違反を判定できないため注入しない。"
-    }
+    "flow.md"
   ],
   "exclude_pathspecs": [
     ":(exclude,glob)**/package-lock.json"
