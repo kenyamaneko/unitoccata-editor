@@ -2,7 +2,7 @@
 
 dev と prod への反映の手順。配信先は、どちらも Firebase Hosting。Firestore と Storage の規則は、この手順では配備しない (Terraform が各環境へ反映する)。
 
-どの種類のバージョンアップを選ぶかは、リポ固有のルールとバージョニングの共通規約に従う。
+どの種類のバージョンアップを選ぶかは、keyandnotes-rules のバージョニングとCI方針に従う。
 
 ## dev へ反映する
 
