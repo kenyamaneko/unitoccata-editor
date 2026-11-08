@@ -14,6 +14,5 @@
 - `**/*.ts` / `**/*.tsx` → `../keyandnotes-rules/rules/lang/typescript.md`
 - テストコードを書くとき → `../keyandnotes-rules/rules/testing.md`
 - `**/*.md` → `../keyandnotes-rules/rules/documentation.md`
-- ブランチ運用・リリース → `rules/flow.md`
 
 共通 principles (`../keyandnotes-rules/rules/principles.md`) と固有 overlay (`rules/principles.md`) は本ファイルから @import 済みなので常に適用される。`../keyandnotes-rules` が存在しない場合、共通ルールは読み込まれない。
