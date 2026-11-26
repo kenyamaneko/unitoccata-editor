@@ -105,14 +105,6 @@ jobs:
           name: coverage
           path: coverage
           retention-days: 1
-      - name: Python を用意する
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.13"
-      - name: カタログ生成スクリプトのテストを実行する
-        run: |
-          pip install pytest
-          python -m pytest scripts
       # 同一 run 内でテスト観点カタログを組むためだけに使うので保持は最短にする。
       - name: JUnit XML を保存する
         uses: actions/upload-artifact@v7

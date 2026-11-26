@@ -9,7 +9,5 @@ dist/
 *-debug.log
 test-results/
 coverage/
-__pycache__/
-.pytest_cache/
 .vitest/
 playwright-report/
